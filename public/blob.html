@@ -58,6 +58,9 @@
                         <button class="btn btn-primary" id="uploadBtn">
                             <span class="glyphicon glyphicon-upload"></span> Upload
                         </button>
+                        <button class="btn btn-default" id="uploadSasBtn" title="A link someone else can upload to directly, using the file name and folder above">
+                            <span class="glyphicon glyphicon-link"></span> Generate upload URL
+                        </button>
                     </div>
                 </div>
             </div>
@@ -99,7 +102,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
-                    <h4 class="modal-title">SAS URL: <span id="sasName"></span></h4>
+                    <h4 class="modal-title"><span id="sasKind"></span>: <span id="sasName"></span></h4>
                 </div>
                 <div class="modal-body">
                     <div class="form-group" id="sasExpiryGroup">
@@ -116,6 +119,10 @@
                         </span>
                     </div>
                     <p class="help-block" id="sasMeta"></p>
+                    <div id="sasUsageGroup" style="display: none;">
+                        <label>Upload with</label>
+                        <pre id="sasUsage" style="white-space: pre-wrap; word-break: break-all;"></pre>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-primary" id="generateSasBtn">Generate</button>

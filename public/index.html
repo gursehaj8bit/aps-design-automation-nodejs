@@ -59,6 +59,19 @@
                     <select class="form-control" id="activity"> </select>
                 </div>
                 <center><button class="btn btn-primary" id="startWorkitem">Start workitem</button></center><br />
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <b>All activities</b> <small class="text-muted" id="ownNickname"></small>
+                        <span class="glyphicon glyphicon-refresh mlink pull-right" id="refreshActivities"
+                            title="Refresh" style="cursor: pointer;"></span>
+                    </div>
+                    <div style="max-height: 40vh; overflow-y: auto;">
+                        <table class="table table-condensed table-striped" id="allActivities" style="margin-bottom: 0;">
+                            <thead><tr><th>Nickname</th><th>Activity</th><th>Alias</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
             <div class="col-sm-8">
                 <pre id="outputlog" style="height: calc(100vh - 120px);; overflow-y: scroll;"></pre>

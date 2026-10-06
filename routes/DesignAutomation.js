@@ -473,6 +473,44 @@ router.get('/aps/designautomation/activities', async /*GetDefinedActivities*/(re
 });
 
 /// <summary>
+/// Every activity visible to this account, split into nickname, name and alias.
+/// An id reads "nickname.Name+alias"; '$LATEST' is the alias DA keeps pointing at the newest version.
+/// </summary>
+router.get('/aps/designautomation/activities/all', async /*GetAllActivities*/(req, res) => {
+    const api = await Utils.dav3API(req.oauth_token);
+    let ids = [];
+    let ownNickname = Utils.NickName;
+    try {
+        let page = undefined;
+        do {
+            const result = await api.getActivities(page ? { page: page } : {});
+            ids = ids.concat(result.data);
+            page = result.paginationToken;
+        } while (page);
+        // The app's nickname defaults to its client id but can be set to something else.
+        ownNickname = (await api.getNickname('me')) || ownNickname;
+    } catch (ex) {
+        console.error(ex);
+        return (res.status(500).json({
+            diagnostic: 'Failed to get activity list'
+        }));
+    }
+
+    const activities = ids.map((id) => {
+        const dot = id.indexOf('.');
+        const plus = id.lastIndexOf('+');
+        return ({
+            id: id,
+            nickname: dot === -1 ? '' : id.substring(0, dot),
+            name: id.substring(dot + 1, plus === -1 ? id.length : plus),
+            alias: plus === -1 ? '' : id.substring(plus + 1)
+        });
+    }).sort((a, b) => a.nickname.localeCompare(b.nickname) || a.name.localeCompare(b.name) || a.alias.localeCompare(b.alias));
+
+    res.status(200).json({ nickname: ownNickname, activities: activities });
+});
+
+/// <summary>
 /// Direct To S3 
 /// ref : https://aps.autodesk.com/blog/new-feature-support-direct-s3-migration-inputoutput-files-design-automation
 /// </summary>

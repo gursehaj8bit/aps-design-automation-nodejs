@@ -5,6 +5,7 @@ $(document).ready(function () {
     $('#defineActivityShow').click(defineActivityModal);
     $('#createAppBundleActivity').click(createAppBundleActivity);
     $('#startWorkitem').click(startWorkitem);
+    $('#refreshActivities').click(listAllActivities);
 
     startConnection();
 });
@@ -13,6 +14,32 @@ function prepareLists() {
     list('activity', '/api/aps/designautomation/activities');
     list('engines', '/api/aps/designautomation/engines');
     list('localBundles', '/api/appbundles');
+    listAllActivities();
+}
+
+function listAllActivities() {
+    const tbody = $('#allActivities tbody').empty()
+        .append($('<tr>').append($('<td colspan="3" class="text-muted">').text('Loading…')));
+    jQuery.ajax({
+        url: '/api/aps/designautomation/activities/all',
+        success: function (res) {
+            $('#ownNickname').text('this app: ' + res.nickname);
+            tbody.empty();
+            if (res.activities.length === 0)
+                tbody.append($('<tr>').append($('<td colspan="3" class="text-muted">').text('Nothing found')));
+            res.activities.forEach(function (a) {
+                $('<tr>').attr('title', a.id).toggleClass('info', a.nickname === res.nickname).append(
+                    $('<td>').text(a.nickname),
+                    $('<td>').text(a.name),
+                    $('<td>').text(a.alias)
+                ).appendTo(tbody);
+            });
+        },
+        error: function (xhr) {
+            tbody.empty().append($('<tr>').append($('<td colspan="3" class="text-danger">')
+                .text((xhr.responseJSON && xhr.responseJSON.diagnostic) || 'Failed to load activities')));
+        }
+    });
 }
 
 function list(control, endpoint) {

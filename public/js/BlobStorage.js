@@ -1,5 +1,6 @@
 let canMintScopedSas = false;
 let sasBlobName = null;
+let sasAccess = 'read';
 
 $(document).ready(function () {
     loadConfig();
@@ -9,6 +10,7 @@ $(document).ready(function () {
     $('#uploadBtn').click(uploadFiles);
     $('#uploadFiles').change(syncUploadName);
     $('#generateSasBtn').click(generateSas);
+    $('#uploadSasBtn').click(openUploadSas);
     $('#copySasBtn').click(copySas);
     $('#viewModal').on('hidden.bs.modal', function () { $('#viewBody').empty(); });
 
@@ -19,7 +21,7 @@ $(document).ready(function () {
             case 'view': return viewFile(name, contentType);
             case 'download': return window.location.assign(blobUrl('download', name));
             case 'delete': return deleteFile(name);
-            case 'sas': return openSas(name);
+            case 'sas': return openSas(name, 'read');
         }
     });
 });
@@ -145,11 +147,22 @@ function viewFile(name, contentType) {
     $('#viewModal').modal('show');
 }
 
-function openSas(name) {
+// The upload URL targets the name the upload form would use: folder + file name.
+function openUploadSas() {
+    const name = $.trim($('#uploadName').prop('disabled') ? '' : $('#uploadName').val()).replace(/^\/+|\/+$/g, '');
+    if (!name) return alert('Enter a file name to generate an upload URL for');
+    const prefix = $.trim($('#uploadPrefix').val()).replace(/^\/+|\/+$/g, '');
+    openSas(prefix ? prefix + '/' + name : name, 'upload');
+}
+
+function openSas(name, access) {
     sasBlobName = name;
+    sasAccess = access;
+    $('#sasKind').text(access === 'upload' ? 'Upload URL' : 'Download URL');
     $('#sasName').text(name);
     $('#sasUrl').val('');
     $('#sasMeta').text('');
+    $('#sasUsageGroup').hide();
     $('#sasExpiryGroup').toggle(canMintScopedSas);
     $('#sasWarning').toggle(!canMintScopedSas).text(canMintScopedSas ? '' :
         'No AZURE_STORAGE_ACCOUNT_KEY is set, so the link reuses the configured SAS token: ' +
@@ -160,12 +173,17 @@ function openSas(name) {
 function generateSas() {
     $.ajax({
         url: '/api/blob/sas', type: 'POST', contentType: 'application/json',
-        data: JSON.stringify({ name: sasBlobName, expiresInMinutes: $('#sasMinutes').val() })
+        data: JSON.stringify({ name: sasBlobName, access: sasAccess, expiresInMinutes: $('#sasMinutes').val() })
     })
         .done(function (res) {
             $('#sasUrl').val(res.url).select();
             const expiry = res.expiresOn ? new Date(res.expiresOn).toLocaleString() : 'unknown';
             $('#sasMeta').text('Permissions: ' + (res.permissions || 'unknown') + ' · Expires: ' + expiry);
+            if (sasAccess === 'upload') {
+                const headers = Object.keys(res.headers).map(function (h) { return '-H "' + h + ': ' + res.headers[h] + '" '; }).join('');
+                $('#sasUsage').text('curl -X ' + res.method + ' ' + headers + '--data-binary @<local file> "' + res.url + '"');
+                $('#sasUsageGroup').show();
+            }
         })
         .fail(function (xhr) { $('#sasMeta').text(errorText(xhr)); });
 }

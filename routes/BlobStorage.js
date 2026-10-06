@@ -149,12 +149,19 @@ router.delete('/blob/files', async (req, res) => {
 
 // A SAS can only be signed with the account key. Without one, the link is the blob URL plus the
 // configured token, which carries every permission and the expiry that token was issued with.
+// access 'upload' grants create + write so a client can PUT the blob without going through this server.
 router.post('/blob/sas', async (req, res) => {
     try {
         const name = blobName(req);
         const blob = containerClient().getBlobClient(name);
         const s = settings();
         const plainUrl = blob.url.split('?')[0];
+        const upload = req.body.access === 'upload';
+        const wanted = upload ? 'cw' : 'r';
+        const usage = upload
+            // curl --data-binary otherwise labels every file application/x-www-form-urlencoded.
+            ? { method: 'PUT', headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': 'application/octet-stream' } }
+            : { method: 'GET', headers: {} };
 
         if (s.accountKey) {
             const minutes = Math.min(Math.max(parseInt(req.body.expiresInMinutes, 10) || 60, 1), MAX_SAS_MINUTES);
@@ -162,19 +169,25 @@ router.post('/blob/sas', async (req, res) => {
             const sas = generateBlobSASQueryParameters({
                 containerName: s.container,
                 blobName: name,
-                permissions: BlobSASPermissions.parse('r'),
+                permissions: BlobSASPermissions.parse(wanted),
                 startsOn: new Date(Date.now() - 5 * 60 * 1000), // tolerate clock skew
                 expiresOn
             }, new StorageSharedKeyCredential(s.account, s.accountKey)).toString();
-            return res.json({ url: `${plainUrl}?${sas}`, scoped: true, permissions: 'r', expiresOn });
+            return res.json({ url: `${plainUrl}?${sas}`, scoped: true, permissions: wanted, expiresOn, ...usage });
         }
 
         const params = new URLSearchParams(s.sasToken);
+        const granted = params.get('sp') || '';
+        if (upload && !/[cw]/.test(granted))
+            return res.status(400).json({
+                error: `AZURE_STORAGE_SAS_TOKEN has permissions "${granted}", which cannot upload (needs c or w)`
+            });
         res.json({
             url: `${plainUrl}?${s.sasToken}`,
             scoped: false,
-            permissions: params.get('sp'),
-            expiresOn: params.get('se')
+            permissions: granted,
+            expiresOn: params.get('se'),
+            ...usage
         });
     } catch (err) {
         fail(res, err);
