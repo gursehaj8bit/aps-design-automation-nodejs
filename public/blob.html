@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>APS - Blob Storage</title>
+    <meta charset="utf-8" />
+    <link rel="shortcut icon" href="https://cdn.autodesk.io/favicon.ico">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.4.1/js/bootstrap.min.js"></script>
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.4.1/css/bootstrap.min.css">
+    <script src="/js/BlobStorage.js"></script>
+    <style>
+        #files td { vertical-align: middle; }
+        #files td.actions { white-space: nowrap; }
+        #viewerFrame { width: 100%; height: 70vh; border: 0; }
+        #viewerImage { max-width: 100%; max-height: 70vh; display: block; margin: 0 auto; }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-default navbar-fixed-top">
+        <div class="container-fluid">
+            <ul class="nav navbar-nav left">
+                <li>
+                    <a href="/" title="Back to Design Automation">
+                        <img alt="Autodesk APS" src="https://cdn.autodesk.io/logo/black/stacked.png" height="20">
+                    </a>
+                </li>
+            </ul>
+            <div style="float: right; margin-top: 15px;">
+                <a href="/"><span class="glyphicon glyphicon-cog"></span> Design Automation</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid" style="margin-top: 70px;">
+        <div id="configAlert" class="alert alert-danger" style="display: none;"></div>
+
+        <div class="row">
+            <div class="col-sm-4">
+                <div class="panel panel-default">
+                    <div class="panel-heading"><b>Upload</b> <small id="target" class="text-muted"></small></div>
+                    <div class="panel-body">
+                        <div class="form-group">
+                            <label for="uploadFiles">Files</label>
+                            <input type="file" id="uploadFiles" multiple>
+                        </div>
+                        <div class="form-group">
+                            <label for="uploadName">File name</label>
+                            <input type="text" class="form-control" id="uploadName" placeholder="Defaults to the chosen file's name">
+                            <p class="help-block" id="uploadNameHelp">Only when uploading a single file.</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="uploadPrefix">Folder (optional)</label>
+                            <input type="text" class="form-control" id="uploadPrefix" placeholder="e.g. inputs/2026-10">
+                            <p class="help-block">A blob with the same name is overwritten.</p>
+                        </div>
+                        <button class="btn btn-primary" id="uploadBtn">
+                            <span class="glyphicon glyphicon-upload"></span> Upload
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-sm-8">
+                <div class="form-inline" style="margin-bottom: 10px;">
+                    <input type="text" class="form-control" id="filterPrefix" placeholder="Filter by prefix">
+                    <button class="btn btn-default" id="refreshBtn">
+                        <span class="glyphicon glyphicon-refresh"></span> Refresh
+                    </button>
+                    <span id="status" class="text-muted" style="margin-left: 10px;"></span>
+                </div>
+                <table class="table table-striped table-condensed" id="files">
+                    <thead>
+                        <tr><th>Name</th><th>Size</th><th>Last modified</th><th></th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- View -->
+    <div class="modal fade" id="viewModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title" id="viewTitle"></h4>
+                </div>
+                <div class="modal-body" id="viewBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SAS URL -->
+    <div class="modal fade" id="sasModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title">SAS URL: <span id="sasName"></span></h4>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group" id="sasExpiryGroup">
+                        <label for="sasMinutes">Expires in (minutes)</label>
+                        <input type="number" class="form-control" id="sasMinutes" value="60" min="1" max="10080">
+                    </div>
+                    <div id="sasWarning" class="alert alert-warning" style="display: none;"></div>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="sasUrl" readonly placeholder="Click Generate">
+                        <span class="input-group-btn">
+                            <button class="btn btn-default" id="copySasBtn" title="Copy">
+                                <span class="glyphicon glyphicon-copy"></span>
+                            </button>
+                        </span>
+                    </div>
+                    <p class="help-block" id="sasMeta"></p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" id="generateSasBtn">Generate</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
