@@ -662,6 +662,81 @@ async function monitorWorkItem(oauthClient, oauthToken, workItemId, browserConne
     }
 }
 
+// The two workitem query endpoints are newer than the dav3 SDK, so they are called over plain HTTP.
+const DA_BASE_URL = 'https://developer.api.autodesk.com/da/us-east/v3';
+// Design Automation answers 400 to a startAfterTime 5 days old or more (it keeps workitems for
+// 3 days). Longer windows are cut to this, with a margin for clock skew.
+const MAX_LOOKBACK_SECONDS = 5 * 24 * 3600 - 300;
+// POST workitems/status answers 400 to more than 50 ids.
+const STATUS_BATCH_SIZE = 50;
+
+async function daRequest(url, oauthToken, options = {}) {
+    const response = await fetch(url, Object.assign({}, options, {
+        headers: Object.assign({ Authorization: 'Bearer ' + oauthToken.access_token }, options.headers)
+    }));
+    if (!response.ok)
+        throw new Error(`${options.method || 'GET'} ${url} answered ${response.status}: ${await response.text()}`);
+    return (response.json());
+}
+
+/// The coarse group a workitem status falls into; the page filters on these.
+function workitemGroup(status) {
+    if (status === 'pending' || status === 'inprogress')
+        return ('running');
+    if (status === 'success')
+        return ('success');
+    if (status === 'cancelled')
+        return ('cancelled');
+    if (status && status.startsWith('failed'))
+        return ('failed');
+    return ('unknown');
+}
+
+/// <summary>
+/// Every workitem Design Automation still holds that changed in the last ?days= days, newest
+/// first, each tagged with a group (running, success, failed, cancelled) for the page to filter on.
+/// </summary>
+router.get('/aps/designautomation/workitems', async /*GetWorkitems*/(req, res) => {
+    const days = parseFloat(req.query.days) > 0 ? parseFloat(req.query.days) : 1;
+    const lookback = Math.min(Math.round(days * 24 * 3600), MAX_LOOKBACK_SECONDS);
+    const startAfterTime = Math.floor(Date.now() / 1000) - lookback;
+
+    let workitems = [];
+    try {
+        let ids = [];
+        let page = null;
+        do {
+            const listing = await daRequest(`${DA_BASE_URL}/workitems?startAfterTime=${startAfterTime}`
+                + (page ? '&page=' + encodeURIComponent(page) : ''), req.oauth_token);
+            ids = ids.concat(listing.data.map((w) => w.id));
+            page = listing.paginationToken;
+        } while (page);
+
+        for (let i = 0; i < ids.length; i += STATUS_BATCH_SIZE) {
+            const statuses = await daRequest(`${DA_BASE_URL}/workitems/status`, req.oauth_token, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ids.slice(i, i + STATUS_BATCH_SIZE))
+            });
+            workitems = workitems.concat(statuses.results);
+        }
+    } catch (ex) {
+        console.error(ex);
+        return (res.status(500).json({
+            diagnostic: 'Failed to get workitem list'
+        }));
+    }
+
+    workitems = workitems
+        .map((w) => Object.assign({ group: workitemGroup(w.status) }, w))
+        .sort((a, b) => ((b.stats && b.stats.timeQueued) || '').localeCompare((a.stats && a.stats.timeQueued) || ''));
+    res.status(200).json({
+        requestedDays: days,
+        coveredDays: lookback / (24 * 3600),
+        workitems: workitems
+    });
+});
+
 /// <summary>
 /// Clear the accounts (for debugging purpouses)
 /// </summary>

@@ -4,17 +4,121 @@ $(document).ready(function () {
     $('#clearAccount').click(clearAccount);
     $('#defineActivityShow').click(defineActivityModal);
     $('#createAppBundleActivity').click(createAppBundleActivity);
-    $('#startWorkitem').click(startWorkitem);
     $('#refreshActivities').click(listAllActivities);
+    $('#refreshWorkitems').click(function () { listWorkitems(); });
+    $('#workitemFilters').on('click', 'button', function () {
+        $('#workitemFilters button').removeClass('active');
+        $(this).addClass('active');
+        renderWorkitems();
+    });
+    $('#workitemSearch').on('input', renderWorkitems);
+    $('#workitemWindow').change(function () { listWorkitems(); });
 
     startConnection();
 });
 
 function prepareLists() {
-    list('activity', '/api/aps/designautomation/activities');
     list('engines', '/api/aps/designautomation/engines');
     list('localBundles', '/api/appbundles');
     listAllActivities();
+    listWorkitems();
+}
+
+var workitemList = [];
+var workitemTimer = null;
+var workitemRequest = 0;
+
+var groupLabels = {
+    running: 'label-info',
+    success: 'label-success',
+    failed: 'label-danger',
+    cancelled: 'label-default',
+    unknown: 'label-warning'
+};
+
+// A background refresh only spins the refresh icon; any other load also replaces the table with a
+// loading row, since what it held may belong to a different window.
+function listWorkitems(background) {
+    clearTimeout(workitemTimer);
+    var request = ++workitemRequest;
+    $('#refreshWorkitems').addClass('spinning');
+    if (background !== true)
+        $('#workitems tbody').empty().append($('<tr>').append($('<td colspan="6" class="text-muted">').text('Loading…')));
+    jQuery.ajax({
+        url: '/api/aps/designautomation/workitems',
+        data: { days: $('#workitemWindow').val() },
+        success: function (res) {
+            // A slower, older request must not overwrite the answer to a newer one.
+            if (request !== workitemRequest)
+                return;
+            workitemList = res.workitems;
+            // Design Automation keeps workitems for 3 days, so a longer window is cut short server side.
+            $('#workitemWindowNote').text(res.coveredDays < res.requestedDays
+                ? 'Design Automation keeps workitems for 3 days only; showing all it still holds'
+                : '');
+            renderWorkitems();
+            // Keep polling only while something is still running, so an idle page makes no calls.
+            if (workitemList.some(function (w) { return w.group === 'running'; }))
+                workitemTimer = setTimeout(function () { listWorkitems(true); }, 10000);
+        },
+        error: function (xhr) {
+            if (request !== workitemRequest)
+                return;
+            $('#workitems tbody').empty().append($('<tr>').append($('<td colspan="6" class="text-danger">')
+                .text((xhr.responseJSON && xhr.responseJSON.diagnostic) || 'Failed to load workitems')));
+        },
+        complete: function () {
+            if (request === workitemRequest)
+                $('#refreshWorkitems').removeClass('spinning');
+        }
+    });
+}
+
+function renderWorkitems() {
+    var group = $('#workitemFilters .active').data('group');
+    var search = $('#workitemSearch').val().trim().toLowerCase();
+
+    $('#workitemFilters button').each(function () {
+        var g = $(this).data('group');
+        $(this).find('.badge').text(workitemList.filter(function (w) { return g === 'all' || w.group === g; }).length);
+    });
+
+    var shown = workitemList.filter(function (w) {
+        if (group !== 'all' && w.group !== group)
+            return false;
+        return !search || [w.id, w.activityId].some(function (v) {
+            return v && v.toLowerCase().indexOf(search) !== -1;
+        });
+    });
+
+    var tbody = $('#workitems tbody').empty();
+    if (shown.length === 0)
+        tbody.append($('<tr>').append($('<td colspan="6" class="text-muted">').text('Nothing found')));
+    shown.forEach(function (w) {
+        var report = w.reportUrl && w.group !== 'running'
+            ? $('<a target="_blank">').attr('href', w.reportUrl).text('Report')
+            : '';
+        $('<tr>').append(
+            $('<td>').append($('<span class="label">').addClass(groupLabels[w.group]).text(w.status + (w.progress ? ' ' + w.progress : ''))),
+            $('<td>').text((w.activityId || '').replace(/^[^.]*\./, '')).attr('title', w.activityId || ''),
+            $('<td>').text(w.stats && w.stats.timeQueued ? new Date(w.stats.timeQueued).toLocaleString() : ''),
+            $('<td>').text(workitemDuration(w)),
+            $('<td>').append($('<code>').text(w.id.substring(0, 8)).attr('title', w.id)),
+            $('<td>').append(report)
+        ).appendTo(tbody);
+    });
+}
+
+function workitemDuration(w) {
+    if (!w.stats || !w.stats.timeQueued)
+        return '';
+    var start = new Date(w.stats.timeQueued);
+    var end = w.stats && w.stats.timeFinished ? new Date(w.stats.timeFinished)
+        : (w.group === 'running' ? new Date() : null);
+    if (!end)
+        return '';
+    var seconds = Math.max(0, Math.round((end - start) / 1000));
+    return seconds < 60 ? seconds + 's' : Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
 }
 
 function listAllActivities() {
@@ -132,43 +236,6 @@ function createActivity(cb) {
         error: function (xhr, ajaxOptions, thrownError) {
             writeLog(' -> ' + (xhr.responseJSON && xhr.responseJSON.diagnostic ? xhr.responseJSON.diagnostic : thrownError));
         }
-    });
-}
-
-function startWorkitem() {
-    var inputFileField = document.getElementById('inputFile');
-    if (inputFileField.files.length === 0) {
-        alert('Please select an input file');
-        return;
-    }
-    if ($('#activity').val() === null)
-        return (alert('Please select an activity'));
-    var file = inputFileField.files[0];
-    startConnection(function () {
-        var formData = new FormData();
-        formData.append('inputFile', file);
-        formData.append('data', JSON.stringify({
-            width: $('#width').val(),
-            height: $('#height').val(),
-            activityName: $('#activity').val(),
-            browserConnectionId: connectionId
-        }));
-        writeLog('Uploading input file...');
-        $.ajax({
-            url: 'api/aps/designautomation/workitems',
-            data: formData,
-            processData: false,
-            contentType: false,
-            //contentType: 'multipart/form-data',
-            //dataType: 'json',
-            type: 'POST',
-            success: function (res) {
-                writeLog('Workitem started: ' + res.workItemId);
-            },
-            error: function (xhr, ajaxOptions, thrownError) {
-                writeLog(' -> ' + (xhr.responseJSON && xhr.responseJSON.diagnostic ? xhr.responseJSON.diagnostic : thrownError));
-            }
-        });
     });
 }
 

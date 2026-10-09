@@ -13,6 +13,10 @@
     <script src="/socket.io/socket.io.js"></script>
     <!-- Files for this project -->
     <script src="/js/ApsDesignAutomation.js"></script>
+    <style>
+        .spinning { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
 </head>
 
 <body style="height: 100%;">
@@ -41,24 +45,6 @@
     <div class="container-fluid" style="margin-top: 70px;">
         <div class="row">
             <div class="col-sm-4">
-                <div class="form-group">
-                    <label for="width">Width:</label>
-                    <input type="number" class="form-control" id="width" placeholder="Enter new width value">
-                </div>
-                <div class="form-group">
-                    <label for="height">Height:</label>
-                    <input type="number" class="form-control" id="height" placeholder="Enter new height value">
-                </div>
-
-                <div class="form-group">
-                    <label for="inputFile">Input file</label>
-                    <input type="file" class="form-control-file" id="inputFile">
-                </div>
-                <div class="form-group">
-                    <label for="activity">Existing activities</label>
-                    <select class="form-control" id="activity"> </select>
-                </div>
-                <center><button class="btn btn-primary" id="startWorkitem">Start workitem</button></center><br />
                 <div class="panel panel-default">
                     <div class="panel-heading">
                         <b>All activities</b> <small class="text-muted" id="ownNickname"></small>
@@ -74,7 +60,41 @@
                 </div>
             </div>
             <div class="col-sm-8">
-                <pre id="outputlog" style="height: calc(100vh - 120px);; overflow-y: scroll;"></pre>
+                <div class="panel panel-default">
+                    <div class="panel-heading clearfix">
+                        <b>Workitems</b> <small class="text-muted" id="workitemWindowNote"></small>
+                        <span class="glyphicon glyphicon-refresh mlink pull-right" id="refreshWorkitems"
+                            title="Refresh" style="cursor: pointer;"></span>
+                    </div>
+                    <div class="panel-body" style="padding-bottom: 0;">
+                        <div class="btn-group btn-group-sm" id="workitemFilters" style="margin-bottom: 10px;">
+                            <button class="btn btn-default active" data-group="all">All <span class="badge"></span></button>
+                            <button class="btn btn-default" data-group="running">Running <span class="badge"></span></button>
+                            <button class="btn btn-default" data-group="success">Succeeded <span class="badge"></span></button>
+                            <button class="btn btn-default" data-group="failed">Failed <span class="badge"></span></button>
+                            <button class="btn btn-default" data-group="cancelled">Cancelled <span class="badge"></span></button>
+                        </div>
+                        <div class="pull-right">
+                            <select class="form-control input-sm" id="workitemWindow"
+                                style="display: inline-block; width: auto;">
+                                <option value="1" selected>Last 1 day</option>
+                                <option value="3">Last 3 days</option>
+                                <option value="7">Last 7 days</option>
+                                <option value="30">Last 1 month</option>
+                                <option value="365">Last 1 year</option>
+                            </select>
+                            <input type="text" class="form-control input-sm" id="workitemSearch"
+                                placeholder="Filter by id or activity" style="display: inline-block; width: 200px;">
+                        </div>
+                    </div>
+                    <div style="max-height: 35vh; overflow-y: auto;">
+                        <table class="table table-condensed table-striped" id="workitems" style="margin-bottom: 0;">
+                            <thead><tr><th>Status</th><th>Activity</th><th>Queued</th><th>Duration</th><th>Id</th><th></th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                <pre id="outputlog" style="height: calc(65vh - 200px); min-height: 150px; overflow-y: scroll;"></pre>
             </div>
         </div>
     </div>
