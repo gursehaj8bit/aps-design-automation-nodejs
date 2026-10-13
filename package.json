@@ -5,7 +5,10 @@
   "main": "start.js",
   "scripts": {
     "start": "node --env-file-if-exists=.env start.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "publish:bundle": "node --env-file-if-exists=.env scripts/publish.js bundle",
+    "publish:activity": "node --env-file-if-exists=.env scripts/publish.js activity",
+    "check:remote": "node --env-file-if-exists=.env scripts/publish.js check-remote",
+    "test": "node --test test/*.test.js"
   },
   "author": "Cyrille Fauvel",
   "contributors": [

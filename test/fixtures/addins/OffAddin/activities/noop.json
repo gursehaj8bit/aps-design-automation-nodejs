@@ -1,0 +1,25 @@
+{
+  "id": "OffAddin_noop_v2",
+  "engine": "Autodesk.Revit+2024",
+  "commandLine": [
+    "$(engine.path)\\revitcoreconsole.exe /al \"$(appbundles[OffAddin].path)\" /l ENU"
+  ],
+  "appbundles": [
+    "{{owner}}.OffAddin+{{bundleAlias}}"
+  ],
+  "parameters": {
+    "params": {
+      "verb": "get",
+      "localName": "params.json",
+      "required": true,
+      "description": "8bit.task/1: the envelope."
+    },
+    "result": {
+      "verb": "put",
+      "localName": "result.json",
+      "required": true,
+      "description": "8bit.taskresult/2: what the task did."
+    }
+  },
+  "description": "OffAddin noop: a test fixture."
+}

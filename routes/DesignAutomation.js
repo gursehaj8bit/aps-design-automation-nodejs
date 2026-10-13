@@ -12,6 +12,7 @@ const { getClient } = require('./common/oauth');
 const config = require('../config');
 const dav3 = require('autodesk.forge.designautomation');
 const ForgeAPI = require('forge-apis');
+const publish = require('../lib/publish');
 
 router.use(bodyParser.json());
 
@@ -371,48 +372,48 @@ router.post('/aps/designautomation/activities', async /*CreateActivity*/(req, re
         }));
     }
     const qualifiedActivityId = `${Utils.NickName}.${activityName}+${Utils.Alias}`;
-    if (!activities.data.includes(qualifiedActivityId)) {
-        // define the activity
-        // ToDo: parametrize for different engines...
-        const engineAttributes = Utils.EngineAttributes(engineName);
-        const commandLine = engineAttributes.commandLine.replace('{0}', appBundleName);
-        const activitySpec = {
-            id: activityName,
-            appbundles: [`${Utils.NickName}.${appBundleName}+${Utils.Alias}`],
-            commandLine: [commandLine],
-            engine: engineName,
-            parameters: {
-                inputFile: {
-                    description: 'input file',
-                    localName: '$(inputFile)',
-                    ondemand: false,
-                    required: true,
-                    verb: dav3.Verb.get,
-                    zip: false
-                },
-                inputJson: {
-                    description: 'input json',
-                    localName: 'params.json',
-                    ondemand: false,
-                    required: false,
-                    verb: dav3.Verb.get,
-                    zip: false
-                },
-                outputFile: {
-                    description: 'output file',
-                    localName: 'outputFile.' + engineAttributes.extension,
-                    ondemand: false,
-                    required: true,
-                    verb: dav3.Verb.put,
-                    zip: false
-                }
+    // define the activity
+    // ToDo: parametrize for different engines...
+    const engineAttributes = Utils.EngineAttributes(engineName);
+    const commandLine = engineAttributes.commandLine.replace('{0}', appBundleName);
+    const activitySpec = {
+        id: activityName,
+        appbundles: [`${Utils.NickName}.${appBundleName}+${Utils.Alias}`],
+        commandLine: [commandLine],
+        engine: engineName,
+        parameters: {
+            inputFile: {
+                description: 'input file',
+                localName: '$(inputFile)',
+                ondemand: false,
+                required: true,
+                verb: dav3.Verb.get,
+                zip: false
             },
-            settings: {
-                script: {
-                    value: engineAttributes.script
-                }
+            inputJson: {
+                description: 'input json',
+                localName: 'params.json',
+                ondemand: false,
+                required: false,
+                verb: dav3.Verb.get,
+                zip: false
+            },
+            outputFile: {
+                description: 'output file',
+                localName: 'outputFile.' + engineAttributes.extension,
+                ondemand: false,
+                required: true,
+                verb: dav3.Verb.put,
+                zip: false
             }
-        };
+        },
+        settings: {
+            script: {
+                value: engineAttributes.script
+            }
+        }
+    };
+    if (!activities.data.includes(qualifiedActivityId)) {
         try {
             const newActivity = await api.createActivity(activitySpec);
         } catch (ex) {
@@ -440,10 +441,20 @@ router.post('/aps/designautomation/activities', async /*CreateActivity*/(req, re
         return;
     }
 
-    // as this activity points to a AppBundle "dev" alias (which points to the last version of the bundle),
-    // there is no need to update it (for this sample), but this may be extended for different contexts
+    // The activity exists: post the spec as a new version and move the alias to it, so a changed
+    // engine or command line is published. Nothing is deleted; the old version stays to point back to.
+    let published = null;
+    try {
+        published = await publish.newActivityVersion(publish.liveHttp(async () => req.oauth_token.access_token), activitySpec, Utils.Alias);
+    } catch (ex) {
+        console.error(ex);
+        return (res.status(500).json({
+            diagnostic: 'Failed to publish a new version of the activity'
+        }));
+    }
     res.status(200).json({
-        activity: 'Activity already defined'
+        activity: qualifiedActivityId,
+        version: published.version
     });
 });
 

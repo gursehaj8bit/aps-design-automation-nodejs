@@ -1,0 +1,18 @@
+{
+  "manifest": "8bit.addin/1",
+  "id": "OffAddin",
+  "version": "2.0.0",
+  "enabled": false,
+  "engine": "Autodesk.Revit+2024",
+  "description": "A disabled add-in, for tests only.",
+  "tasks": {
+    "noop": {
+      "description": "Does nothing.",
+      "serves": [],
+      "model": { "input": "none", "output": "none" },
+      "inputs": {},
+      "outputs": {},
+      "timeoutSeconds": 60
+    }
+  }
+}

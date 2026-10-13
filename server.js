@@ -17,6 +17,7 @@ app.use(express.json({
 }));
 // Mounted first: the Design Automation router fetches an APS token for every /api request it sees.
 app.use('/api', require('./routes/BlobStorage'));
+app.use('/api', require('./routes/Addins'));
 app.use('/api', require('./routes/DesignAutomation'));
 
 app.set('port', process.env.PORT || 8080);

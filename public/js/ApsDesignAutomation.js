@@ -5,6 +5,10 @@ $(document).ready(function () {
     $('#defineActivityShow').click(defineActivityModal);
     $('#createAppBundleActivity').click(createAppBundleActivity);
     $('#refreshActivities').click(listAllActivities);
+    $('#publishAddinModal').on('show.bs.modal', listAddins);
+    $('#publishAddinBundle').click(function () { runAddinCommand('bundle'); });
+    $('#publishAddinActivities').click(function () { runAddinCommand('activity'); });
+    $('#checkRemote').click(function () { runAddinCommand('check-remote'); });
     $('#refreshWorkitems').click(function () { listWorkitems(); });
     $('#workitemFilters').on('click', 'button', function () {
         $('#workitemFilters button').removeClass('active');
@@ -229,7 +233,7 @@ function createActivity(cb) {
             engine: $('#engines').val()
         }),
         success: function (res) {
-            writeLog('Activity: ' + res.activity);
+            writeLog('Activity: ' + res.activity + (res.version ? ', v' + res.version : ''));
             if (cb)
                 cb();
         },
@@ -237,6 +241,59 @@ function createActivity(cb) {
             writeLog(' -> ' + (xhr.responseJSON && xhr.responseJSON.diagnostic ? xhr.responseJSON.diagnostic : thrownError));
         }
     });
+}
+
+// The add-ins the server finds under ADDINS_ROOT; only enabled ones can be published.
+function listAddins() {
+    jQuery.ajax({
+        url: '/api/addins',
+        success: function (res) {
+            $('#addinsRoot').text('from ' + res.addinsRoot);
+            var addins = $('#addins').empty();
+            if (res.addins.length === 0)
+                addins.append($('<option>', { disabled: true, text: 'Nothing found' }));
+            res.addins.forEach(function (a) {
+                addins.append($('<option>', {
+                    value: a.id,
+                    disabled: !a.enabled,
+                    text: a.id + ' ' + a.version + (a.enabled ? '' : ' (disabled)') + (a.hasBundleZip ? '' : ' (no bundle zip built)')
+                }));
+            });
+            var aliases = $('#addinAlias').empty();
+            res.aliases.forEach(function (alias) {
+                aliases.append($('<option>', { value: alias, text: alias }));
+            });
+        },
+        error: function (xhr) {
+            writeLines([(xhr.responseJSON && xhr.responseJSON.diagnostic) || 'Failed to list add-ins']);
+        }
+    });
+}
+
+function runAddinCommand(command) {
+    var alias = $('#addinAlias').val();
+    writeLines([command + ' ' + (command === 'check-remote' ? '' : $('#addins').val() + ' ') + '+' + alias + ' ...']);
+    jQuery.ajax({
+        url: '/api/addins/publish',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ command: command, addin: $('#addins').val(), alias: alias }),
+        success: function (res) {
+            writeLines(res.lines);
+            listAllActivities();
+        },
+        error: function (xhr) {
+            var r = xhr.responseJSON || {};
+            writeLines((r.lines || []).concat([' -> ' + (r.diagnostic || 'Failed')]));
+        }
+    });
+}
+
+// Plain text lines: what the publisher prints is not HTML.
+function writeLines(lines) {
+    $('#outputlog').append($('<div style="border-top: 1px dashed #C0C0C0; white-space: pre">').text(lines.join('\n')));
+    var elem = document.getElementById('outputlog');
+    elem.scrollTop = elem.scrollHeight;
 }
 
 function writeLog(text) {

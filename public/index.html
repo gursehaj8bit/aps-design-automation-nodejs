@@ -34,6 +34,10 @@
                 <a href="/blob.html" style="padding-right: 15px;" title="Azure Blob Storage files">
                     <span class="glyphicon glyphicon-cloud"></span> Blob Storage
                 </a>
+                <span style="padding-right: 15px;" data-toggle="modal" data-target="#publishAddinModal"
+                    title="Publish an add-in from revit/addins">
+                    <span class="glyphicon glyphicon-upload mlink"> </span> Publish add-in
+                </span>
                 <span style="padding-right: 5px;" data-toggle="modal" data-target="#defineActivityModal"
                     title="Configura AppBundle & Activity">
                     <span class="glyphicon glyphicon-cog glyphiconTop mlink"> </span> Configure
@@ -95,6 +99,36 @@
                     </div>
                 </div>
                 <pre id="outputlog" style="height: calc(65vh - 200px); min-height: 150px; overflow-y: scroll;"></pre>
+            </div>
+        </div>
+    </div>
+    <!-- Modal Publish an add-in rendered in revit/addins -->
+    <div class="modal fade" id="publishAddinModal" tabindex="-1" role="dialog" aria-labelledby="publishAddinLabel">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Cancel"><span
+                            aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title" id="publishAddinLabel">Publish an add-in</h4>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="addins">Add-in:</label>
+                        <select class="form-control" id="addins"> </select>
+                        <small class="text-muted" id="addinsRoot"></small>
+                    </div>
+                    <div class="form-group">
+                        <label for="addinAlias">Alias:</label>
+                        <select class="form-control" id="addinAlias"> </select>
+                    </div>
+                    Every publish is a new version plus an alias move; nothing is deleted.
+                    The output appears in the log.
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-default" id="checkRemote">Check remote</button>
+                    <button class="btn btn-primary" id="publishAddinBundle">Publish bundle</button>
+                    <button class="btn btn-primary" id="publishAddinActivities">Publish activities</button>
+                </div>
             </div>
         </div>
     </div>
