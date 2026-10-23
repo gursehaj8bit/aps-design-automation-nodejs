@@ -680,6 +680,9 @@ const DA_BASE_URL = 'https://developer.api.autodesk.com/da/us-east/v3';
 const MAX_LOOKBACK_SECONDS = 5 * 24 * 3600 - 300;
 // POST workitems/status answers 400 to more than 50 ids.
 const STATUS_BATCH_SIZE = 50;
+// Queue positions take one GET per workitem; this many go out at once, so a long queue does not
+// arrive at Design Automation as a single burst.
+const POSITION_BATCH_SIZE = 10;
 
 async function daRequest(url, oauthToken, options = {}) {
     const response = await fetch(url, Object.assign({}, options, {
@@ -706,6 +709,7 @@ function workitemGroup(status) {
 /// <summary>
 /// Every workitem Design Automation still holds that changed in the last ?days= days, newest
 /// first, each tagged with a group (running, success, failed, cancelled) for the page to filter on.
+/// A pending workitem also carries approximateQueuePosition (1 = next to run, null = unknown).
 /// </summary>
 router.get('/aps/designautomation/workitems', async /*GetWorkitems*/(req, res) => {
     const days = parseFloat(req.query.days) > 0 ? parseFloat(req.query.days) : 1;
@@ -735,6 +739,21 @@ router.get('/aps/designautomation/workitems', async /*GetWorkitems*/(req, res) =
         console.error(ex);
         return (res.status(500).json({
             diagnostic: 'Failed to get workitem list'
+        }));
+    }
+
+    // Only GET workitems/{id} reports a queue position, and only while the workitem is pending. Its
+    // answer is newer than the batch status, so it replaces it: a workitem that started meanwhile
+    // comes back inprogress, with no position.
+    const pending = workitems.filter((w) => w.status === 'pending');
+    for (let i = 0; i < pending.length; i += POSITION_BATCH_SIZE) {
+        await Promise.all(pending.slice(i, i + POSITION_BATCH_SIZE).map(async (w) => {
+            try {
+                Object.assign(w, await daRequest(`${DA_BASE_URL}/workitems/${encodeURIComponent(w.id)}`, req.oauth_token));
+            } catch (ex) {
+                // One failed lookup must not cost the whole listing; the page shows that position as unknown.
+                console.error(ex);
+            }
         }));
     }
 

@@ -103,7 +103,7 @@ function renderWorkitems() {
             ? $('<a target="_blank">').attr('href', w.reportUrl).text('Report')
             : '';
         $('<tr>').append(
-            $('<td>').append($('<span class="label">').addClass(groupLabels[w.group]).text(w.status + (w.progress ? ' ' + w.progress : ''))),
+            $('<td>').append($('<span class="label">').addClass(groupLabels[w.group]).text(w.status + (w.progress ? ' ' + w.progress : '')), ' ', queuePosition(w)),
             $('<td>').text((w.activityId || '').replace(/^[^.]*\./, '')).attr('title', w.activityId || ''),
             $('<td>').text(w.stats && w.stats.timeQueued ? new Date(w.stats.timeQueued).toLocaleString() : ''),
             $('<td>').text(workitemDuration(w)),
@@ -111,6 +111,18 @@ function renderWorkitems() {
             $('<td>').append(report)
         ).appendTo(tbody);
     });
+}
+
+// Design Automation gives a position only for a pending workitem, counted in the one queue all
+// versions of that engine share.
+function queuePosition(w) {
+    if (w.status !== 'pending')
+        return '';
+    if (typeof w.approximateQueuePosition === 'number')
+        return $('<small class="text-muted">').text('#' + w.approximateQueuePosition + ' in queue')
+            .attr('title', 'Approximate position in the engine queue; it can move briefly and is not a wait time');
+    return $('<small class="text-muted">').text('position unknown')
+        .attr('title', 'Design Automation could not say where this workitem is in the queue, or the lookup failed (see the server log)');
 }
 
 function workitemDuration(w) {
