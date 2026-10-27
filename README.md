@@ -75,6 +75,16 @@ The "Create/Update" button in **Configure** now also posts a new version of an a
 
 Tests: `npm test` (no network; every request goes through one injectable function).
 
+## A test SVF bundle for a family viewer
+
+`npm run family:svf` makes a test 3D model bundle for one family's `.rfa` and stores it where the platform's family viewer reads it. **It calls real Autodesk and Azure services**, and spends Model Derivative translation.
+
+    npm run family:svf -- --sha256 <rfa sha256> [--env local] [--region US] [--out <dir>] [--dry-run] [--timeout-minutes 30]
+
+It reads the RFA at `<env>/families/<sha256>` from the platform's Azure container and checks its sha256; uploads it as `<sha256>.rfa` to a transient OSS bucket named from the client id; translates it to SVF (version 1, 3D views only); downloads each 3D `.svf` with every asset it lists, the property database and the AEC model data through the derivative `signedcookies` endpoint; writes `bubble.json` (the manifest with every derivative URN rewritten to `$file$/<path>`); and, unless `--dry-run`, uploads every file to `<env>/families/<sha256>.svf/<encoded path>`. The key rule is in `lib/svf-bundle.js` and must match the platform's. `--out <dir>` also writes a local copy. The platform then serves it at `/api/families/<id>/versions/<seq>/viewable/bubble.json`.
+
+Settings, read from `.env`: `APS_CLIENT_ID`, `APS_CLIENT_SECRET`, and the platform's store with the service principal it writes with: `PRODUCT_STORE_AZURE_ACCOUNT_URL`, `PRODUCT_STORE_AZURE_CONTAINER`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` (the same names as `platform/backend/.env`). Azure sign-in is `@azure/identity`'s `ClientSecretCredential`. Nothing secret is printed. `--help` needs no settings. Exit codes: 0 done, 1 failed, 2 refused.
+
 ## Debugging Locally
 
 To run or debug a simple app in VS Code, select **Run and Debug** on the Debug start view or press F5 and VS Code will try to run your currently active file.
