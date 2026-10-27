@@ -55,6 +55,36 @@ Open the browser: [http://localhost:8080](http://localhost:8080).
 
 Open `http://localhost:8080` to start the app, if first time, click on `Configure`(right top) select the bundle and engine and click on `Create/Update` this will create an activity. Enter new `width` & `height` values, select the input file (use from **sample files** folder), select the `Activity` and, finally, `Start workitem`. 
 
+## Publishing an add-in from revit/addins
+
+When this app sits in the design-automation repo at `revit/aps-design-automation-nodejs`, it also publishes the add-ins that repo keeps under `revit/addins/`. The parent repo renders each add-in's `activities/<task>.json` from its `addin.json`, and builds `dist/<Id>.zip` on Windows with `revit/tools/build-bundle.ps1`. This app only reads those files; it never writes into the parent repo. Only add-ins with `"enabled": true` are published or checked.
+
+    npm run publish:bundle   -- --addin HelloBundle --alias dev [--check-only]
+    npm run publish:activity -- --addin HelloBundle [--task count_elements] --alias dev [--bundle-alias dev] [--dry-run]
+    npm run check:remote     -- --alias dev [--bundle-alias dev]
+
+- `publish:bundle` checks the zip first (one `<Id>.bundle` folder, no Revit or UI assemblies, no forbidden strings), then creates the AppBundle or posts a new version of it, uploads the zip, and only then points the alias at the new version. `--check-only` checks the zip and sends nothing.
+- `publish:activity` fills `{{owner}}` and `{{bundleAlias}}` in each rendered activity (the bundle alias defaults to `--alias`), creates the activity or posts a new version of it, and moves the alias. `--dry-run` prints the filled activity and sends nothing.
+- `check:remote` reads every enabled activity at the alias and compares it with the rendered file (engine, command line, bundles, every parameter). It changes nothing.
+
+An update is always a new version plus an alias move; nothing is ever deleted, so a queued work item keeps its version and the old one is there to point back to. Aliases are `dev`, `uat` or `prod`. Exit codes: 0 done or no drift, 1 failed or drift found, 2 refused before anything was sent.
+
+Settings, read from `.env` (see `.env.example`): `APS_CLIENT_ID` and `APS_CLIENT_SECRET` as for the rest of the app; `ADDINS_ROOT` (default `../addins`); `APS_DA_NICKNAME` (default: this app's nickname as Design Automation reports it). The **Publish add-in** button on the page runs the same three commands.
+
+The "Create/Update" button in **Configure** now also posts a new version of an activity that already exists and moves its alias, instead of answering "Activity already defined".
+
+Tests: `npm test` (no network; every request goes through one injectable function).
+
+## A test SVF bundle for a family viewer
+
+`npm run family:svf` makes a test 3D model bundle for one family's `.rfa` and stores it where the platform's family viewer reads it. **It calls real Autodesk and Azure services**, and spends Model Derivative translation.
+
+    npm run family:svf -- --sha256 <rfa sha256> [--env local] [--region US] [--out <dir>] [--dry-run] [--timeout-minutes 30]
+
+It reads the RFA at `<env>/families/<sha256>` from the platform's Azure container and checks its sha256; uploads it as `<sha256>.rfa` to a transient OSS bucket named from the client id; translates it to SVF (version 1, 3D views only); downloads each 3D `.svf` with every asset it lists, the property database and the AEC model data through the derivative `signedcookies` endpoint; writes `bubble.json` (the manifest with every derivative URN rewritten to `$file$/<path>`); and, unless `--dry-run`, uploads every file to `<env>/families/<sha256>.svf/<encoded path>`. The key rule is in `lib/svf-bundle.js` and must match the platform's. `--out <dir>` also writes a local copy. The platform then serves it at `/api/families/<id>/versions/<seq>/viewable/bubble.json`.
+
+Settings, read from `.env`: `APS_CLIENT_ID`, `APS_CLIENT_SECRET`, and the platform's store with the service principal it writes with: `PRODUCT_STORE_AZURE_ACCOUNT_URL`, `PRODUCT_STORE_AZURE_CONTAINER`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` (the same names as `platform/backend/.env`). Azure sign-in is `@azure/identity`'s `ClientSecretCredential`. Nothing secret is printed. `--help` needs no settings. Exit codes: 0 done, 1 failed, 2 refused.
+
 ## Debugging Locally
 
 To run or debug a simple app in VS Code, select **Run and Debug** on the Debug start view or press F5 and VS Code will try to run your currently active file.

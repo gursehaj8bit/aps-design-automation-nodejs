@@ -13,6 +13,10 @@
     <script src="/socket.io/socket.io.js"></script>
     <!-- Files for this project -->
     <script src="/js/ApsDesignAutomation.js"></script>
+    <style>
+        .spinning { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
 </head>
 
 <body style="height: 100%;">
@@ -27,6 +31,13 @@
                 </li>
             </ul>
             <div style="float: right; margin-top: 15px; cursor: pointer;">
+                <a href="/blob.html" style="padding-right: 15px;" title="Azure Blob Storage files">
+                    <span class="glyphicon glyphicon-cloud"></span> Blob Storage
+                </a>
+                <span style="padding-right: 15px;" data-toggle="modal" data-target="#publishAddinModal"
+                    title="Publish an add-in from revit/addins">
+                    <span class="glyphicon glyphicon-upload mlink"> </span> Publish add-in
+                </span>
                 <span style="padding-right: 5px;" data-toggle="modal" data-target="#defineActivityModal"
                     title="Configura AppBundle & Activity">
                     <span class="glyphicon glyphicon-cog glyphiconTop mlink"> </span> Configure
@@ -38,27 +49,86 @@
     <div class="container-fluid" style="margin-top: 70px;">
         <div class="row">
             <div class="col-sm-4">
-                <div class="form-group">
-                    <label for="width">Width:</label>
-                    <input type="number" class="form-control" id="width" placeholder="Enter new width value">
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <b>All activities</b> <small class="text-muted" id="ownNickname"></small>
+                        <span class="glyphicon glyphicon-refresh mlink pull-right" id="refreshActivities"
+                            title="Refresh" style="cursor: pointer;"></span>
+                    </div>
+                    <div style="max-height: 40vh; overflow-y: auto;">
+                        <table class="table table-condensed table-striped" id="allActivities" style="margin-bottom: 0;">
+                            <thead><tr><th>Nickname</th><th>Activity</th><th>Alias</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="height">Height:</label>
-                    <input type="number" class="form-control" id="height" placeholder="Enter new height value">
-                </div>
-
-                <div class="form-group">
-                    <label for="inputFile">Input file</label>
-                    <input type="file" class="form-control-file" id="inputFile">
-                </div>
-                <div class="form-group">
-                    <label for="activity">Existing activities</label>
-                    <select class="form-control" id="activity"> </select>
-                </div>
-                <center><button class="btn btn-primary" id="startWorkitem">Start workitem</button></center><br />
             </div>
             <div class="col-sm-8">
-                <pre id="outputlog" style="height: calc(100vh - 120px);; overflow-y: scroll;"></pre>
+                <div class="panel panel-default">
+                    <div class="panel-heading clearfix">
+                        <b>Workitems</b> <small class="text-muted" id="workitemWindowNote"></small>
+                        <span class="glyphicon glyphicon-refresh mlink pull-right" id="refreshWorkitems"
+                            title="Refresh" style="cursor: pointer;"></span>
+                    </div>
+                    <div class="panel-body" style="padding-bottom: 0;">
+                        <div class="btn-group btn-group-sm" id="workitemFilters" style="margin-bottom: 10px;">
+                            <button class="btn btn-default active" data-group="all">All <span class="badge"></span></button>
+                            <button class="btn btn-default" data-group="running">Running <span class="badge"></span></button>
+                            <button class="btn btn-default" data-group="success">Succeeded <span class="badge"></span></button>
+                            <button class="btn btn-default" data-group="failed">Failed <span class="badge"></span></button>
+                            <button class="btn btn-default" data-group="cancelled">Cancelled <span class="badge"></span></button>
+                        </div>
+                        <div class="pull-right">
+                            <select class="form-control input-sm" id="workitemWindow"
+                                style="display: inline-block; width: auto;">
+                                <option value="1" selected>Last 1 day</option>
+                                <option value="3">Last 3 days</option>
+                                <option value="7">Last 7 days</option>
+                                <option value="30">Last 1 month</option>
+                                <option value="365">Last 1 year</option>
+                            </select>
+                            <input type="text" class="form-control input-sm" id="workitemSearch"
+                                placeholder="Filter by id or activity" style="display: inline-block; width: 200px;">
+                        </div>
+                    </div>
+                    <div style="max-height: 35vh; overflow-y: auto;">
+                        <table class="table table-condensed table-striped" id="workitems" style="margin-bottom: 0;">
+                            <thead><tr><th>Status</th><th>Activity</th><th>Queued</th><th>Duration</th><th>Id</th><th></th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                <pre id="outputlog" style="height: calc(65vh - 200px); min-height: 150px; overflow-y: scroll;"></pre>
+            </div>
+        </div>
+    </div>
+    <!-- Modal Publish an add-in rendered in revit/addins -->
+    <div class="modal fade" id="publishAddinModal" tabindex="-1" role="dialog" aria-labelledby="publishAddinLabel">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Cancel"><span
+                            aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title" id="publishAddinLabel">Publish an add-in</h4>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="addins">Add-in:</label>
+                        <select class="form-control" id="addins"> </select>
+                        <small class="text-muted" id="addinsRoot"></small>
+                    </div>
+                    <div class="form-group">
+                        <label for="addinAlias">Alias:</label>
+                        <select class="form-control" id="addinAlias"> </select>
+                    </div>
+                    Every publish is a new version plus an alias move; nothing is deleted.
+                    The output appears in the log.
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-default" id="checkRemote">Check remote</button>
+                    <button class="btn btn-primary" id="publishAddinBundle">Publish bundle</button>
+                    <button class="btn btn-primary" id="publishAddinActivities">Publish activities</button>
+                </div>
             </div>
         </div>
     </div>

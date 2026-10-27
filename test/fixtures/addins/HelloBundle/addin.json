@@ -1,0 +1,26 @@
+{
+  "manifest": "8bit.addin/1",
+  "id": "HelloBundle",
+  "version": "1.0.0",
+  "enabled": true,
+  "engine": "Autodesk.Revit+2024",
+  "description": "The reference add-in: proves the whole chain (bundle, envelope, model round trip, outputs) before a real add-in is blamed.",
+  "tasks": {
+    "count_elements": {
+      "description": "Counts the model's elements by category, writes the counts, and stamps the total into project information so the returned model provably differs from the input.",
+      "serves": [],
+      "model": { "input": "required", "output": "required" },
+      "inputs": {},
+      "outputs": {
+        "counts": {
+          "file": "element-counts.json",
+          "schema": "8bit.elementcounts/1",
+          "required": true,
+          "description": "Element counts by category, at or above minCount."
+        }
+      },
+      "options": { "schema": "hello.options/1" },
+      "timeoutSeconds": 600
+    }
+  }
+}

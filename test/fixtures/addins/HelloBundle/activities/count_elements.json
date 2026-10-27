@@ -1,0 +1,43 @@
+{
+  "id": "HelloBundle_count_elements_v1",
+  "engine": "Autodesk.Revit+2024",
+  "commandLine": [
+    "$(engine.path)\\revitcoreconsole.exe /i \"$(args[inputModel].path)\" /al \"$(appbundles[HelloBundle].path)\" /l ENU"
+  ],
+  "appbundles": [
+    "{{owner}}.HelloBundle+{{bundleAlias}}"
+  ],
+  "parameters": {
+    "inputModel": {
+      "verb": "get",
+      "localName": "input.rvt",
+      "required": true,
+      "description": "The model, opened by the command line's /i."
+    },
+    "params": {
+      "verb": "get",
+      "localName": "params.json",
+      "required": true,
+      "description": "8bit.task/1: the envelope, with hello.options/1 as its options."
+    },
+    "outputModel": {
+      "verb": "put",
+      "localName": "output.rvt",
+      "required": false,
+      "description": "revit.model/1: the model as the task left it. Optional here; the platform enforces it from result.json."
+    },
+    "out_counts": {
+      "verb": "put",
+      "localName": "element-counts.json",
+      "required": false,
+      "description": "8bit.elementcounts/1: element counts by category, at or above minCount. Optional here; the platform enforces it from result.json."
+    },
+    "result": {
+      "verb": "put",
+      "localName": "result.json",
+      "required": true,
+      "description": "8bit.taskresult/2: what the task did. The one output Design Automation itself requires."
+    }
+  },
+  "description": "HelloBundle count_elements (HelloBundle 1.x): counts the model's elements by category, writes the counts, and stamps the total into project information so the returned model provably differs from the input."
+}

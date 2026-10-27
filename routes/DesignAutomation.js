@@ -12,6 +12,7 @@ const { getClient } = require('./common/oauth');
 const config = require('../config');
 const dav3 = require('autodesk.forge.designautomation');
 const ForgeAPI = require('forge-apis');
+const publish = require('../lib/publish');
 
 router.use(bodyParser.json());
 
@@ -371,48 +372,48 @@ router.post('/aps/designautomation/activities', async /*CreateActivity*/(req, re
         }));
     }
     const qualifiedActivityId = `${Utils.NickName}.${activityName}+${Utils.Alias}`;
-    if (!activities.data.includes(qualifiedActivityId)) {
-        // define the activity
-        // ToDo: parametrize for different engines...
-        const engineAttributes = Utils.EngineAttributes(engineName);
-        const commandLine = engineAttributes.commandLine.replace('{0}', appBundleName);
-        const activitySpec = {
-            id: activityName,
-            appbundles: [`${Utils.NickName}.${appBundleName}+${Utils.Alias}`],
-            commandLine: [commandLine],
-            engine: engineName,
-            parameters: {
-                inputFile: {
-                    description: 'input file',
-                    localName: '$(inputFile)',
-                    ondemand: false,
-                    required: true,
-                    verb: dav3.Verb.get,
-                    zip: false
-                },
-                inputJson: {
-                    description: 'input json',
-                    localName: 'params.json',
-                    ondemand: false,
-                    required: false,
-                    verb: dav3.Verb.get,
-                    zip: false
-                },
-                outputFile: {
-                    description: 'output file',
-                    localName: 'outputFile.' + engineAttributes.extension,
-                    ondemand: false,
-                    required: true,
-                    verb: dav3.Verb.put,
-                    zip: false
-                }
+    // define the activity
+    // ToDo: parametrize for different engines...
+    const engineAttributes = Utils.EngineAttributes(engineName);
+    const commandLine = engineAttributes.commandLine.replace('{0}', appBundleName);
+    const activitySpec = {
+        id: activityName,
+        appbundles: [`${Utils.NickName}.${appBundleName}+${Utils.Alias}`],
+        commandLine: [commandLine],
+        engine: engineName,
+        parameters: {
+            inputFile: {
+                description: 'input file',
+                localName: '$(inputFile)',
+                ondemand: false,
+                required: true,
+                verb: dav3.Verb.get,
+                zip: false
             },
-            settings: {
-                script: {
-                    value: engineAttributes.script
-                }
+            inputJson: {
+                description: 'input json',
+                localName: 'params.json',
+                ondemand: false,
+                required: false,
+                verb: dav3.Verb.get,
+                zip: false
+            },
+            outputFile: {
+                description: 'output file',
+                localName: 'outputFile.' + engineAttributes.extension,
+                ondemand: false,
+                required: true,
+                verb: dav3.Verb.put,
+                zip: false
             }
-        };
+        },
+        settings: {
+            script: {
+                value: engineAttributes.script
+            }
+        }
+    };
+    if (!activities.data.includes(qualifiedActivityId)) {
         try {
             const newActivity = await api.createActivity(activitySpec);
         } catch (ex) {
@@ -440,10 +441,20 @@ router.post('/aps/designautomation/activities', async /*CreateActivity*/(req, re
         return;
     }
 
-    // as this activity points to a AppBundle "dev" alias (which points to the last version of the bundle),
-    // there is no need to update it (for this sample), but this may be extended for different contexts
+    // The activity exists: post the spec as a new version and move the alias to it, so a changed
+    // engine or command line is published. Nothing is deleted; the old version stays to point back to.
+    let published = null;
+    try {
+        published = await publish.newActivityVersion(publish.liveHttp(async () => req.oauth_token.access_token), activitySpec, Utils.Alias);
+    } catch (ex) {
+        console.error(ex);
+        return (res.status(500).json({
+            diagnostic: 'Failed to publish a new version of the activity'
+        }));
+    }
     res.status(200).json({
-        activity: 'Activity already defined'
+        activity: qualifiedActivityId,
+        version: published.version
     });
 });
 
@@ -470,6 +481,44 @@ router.get('/aps/designautomation/activities', async /*GetDefinedActivities*/(re
     }
 
     res.status(200).json(definedActivities);
+});
+
+/// <summary>
+/// Every activity visible to this account, split into nickname, name and alias.
+/// An id reads "nickname.Name+alias"; '$LATEST' is the alias DA keeps pointing at the newest version.
+/// </summary>
+router.get('/aps/designautomation/activities/all', async /*GetAllActivities*/(req, res) => {
+    const api = await Utils.dav3API(req.oauth_token);
+    let ids = [];
+    let ownNickname = Utils.NickName;
+    try {
+        let page = undefined;
+        do {
+            const result = await api.getActivities(page ? { page: page } : {});
+            ids = ids.concat(result.data);
+            page = result.paginationToken;
+        } while (page);
+        // The app's nickname defaults to its client id but can be set to something else.
+        ownNickname = (await api.getNickname('me')) || ownNickname;
+    } catch (ex) {
+        console.error(ex);
+        return (res.status(500).json({
+            diagnostic: 'Failed to get activity list'
+        }));
+    }
+
+    const activities = ids.map((id) => {
+        const dot = id.indexOf('.');
+        const plus = id.lastIndexOf('+');
+        return ({
+            id: id,
+            nickname: dot === -1 ? '' : id.substring(0, dot),
+            name: id.substring(dot + 1, plus === -1 ? id.length : plus),
+            alias: plus === -1 ? '' : id.substring(plus + 1)
+        });
+    }).sort((a, b) => a.nickname.localeCompare(b.nickname) || a.name.localeCompare(b.name) || a.alias.localeCompare(b.alias));
+
+    res.status(200).json({ nickname: ownNickname, activities: activities });
 });
 
 /// <summary>
@@ -623,6 +672,100 @@ async function monitorWorkItem(oauthClient, oauthToken, workItemId, browserConne
         socketIO.to(browserConnectionId).emit('onError', err);
     }
 }
+
+// The two workitem query endpoints are newer than the dav3 SDK, so they are called over plain HTTP.
+const DA_BASE_URL = 'https://developer.api.autodesk.com/da/us-east/v3';
+// Design Automation answers 400 to a startAfterTime 5 days old or more (it keeps workitems for
+// 3 days). Longer windows are cut to this, with a margin for clock skew.
+const MAX_LOOKBACK_SECONDS = 5 * 24 * 3600 - 300;
+// POST workitems/status answers 400 to more than 50 ids.
+const STATUS_BATCH_SIZE = 50;
+// Queue positions take one GET per workitem; this many go out at once, so a long queue does not
+// arrive at Design Automation as a single burst.
+const POSITION_BATCH_SIZE = 10;
+
+async function daRequest(url, oauthToken, options = {}) {
+    const response = await fetch(url, Object.assign({}, options, {
+        headers: Object.assign({ Authorization: 'Bearer ' + oauthToken.access_token }, options.headers)
+    }));
+    if (!response.ok)
+        throw new Error(`${options.method || 'GET'} ${url} answered ${response.status}: ${await response.text()}`);
+    return (response.json());
+}
+
+/// The coarse group a workitem status falls into; the page filters on these.
+function workitemGroup(status) {
+    if (status === 'pending' || status === 'inprogress')
+        return ('running');
+    if (status === 'success')
+        return ('success');
+    if (status === 'cancelled')
+        return ('cancelled');
+    if (status && status.startsWith('failed'))
+        return ('failed');
+    return ('unknown');
+}
+
+/// <summary>
+/// Every workitem Design Automation still holds that changed in the last ?days= days, newest
+/// first, each tagged with a group (running, success, failed, cancelled) for the page to filter on.
+/// A pending workitem also carries approximateQueuePosition (1 = next to run, null = unknown).
+/// </summary>
+router.get('/aps/designautomation/workitems', async /*GetWorkitems*/(req, res) => {
+    const days = parseFloat(req.query.days) > 0 ? parseFloat(req.query.days) : 1;
+    const lookback = Math.min(Math.round(days * 24 * 3600), MAX_LOOKBACK_SECONDS);
+    const startAfterTime = Math.floor(Date.now() / 1000) - lookback;
+
+    let workitems = [];
+    try {
+        let ids = [];
+        let page = null;
+        do {
+            const listing = await daRequest(`${DA_BASE_URL}/workitems?startAfterTime=${startAfterTime}`
+                + (page ? '&page=' + encodeURIComponent(page) : ''), req.oauth_token);
+            ids = ids.concat(listing.data.map((w) => w.id));
+            page = listing.paginationToken;
+        } while (page);
+
+        for (let i = 0; i < ids.length; i += STATUS_BATCH_SIZE) {
+            const statuses = await daRequest(`${DA_BASE_URL}/workitems/status`, req.oauth_token, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ids.slice(i, i + STATUS_BATCH_SIZE))
+            });
+            workitems = workitems.concat(statuses.results);
+        }
+    } catch (ex) {
+        console.error(ex);
+        return (res.status(500).json({
+            diagnostic: 'Failed to get workitem list'
+        }));
+    }
+
+    // Only GET workitems/{id} reports a queue position, and only while the workitem is pending. Its
+    // answer is newer than the batch status, so it replaces it: a workitem that started meanwhile
+    // comes back inprogress, with no position.
+    const pending = workitems.filter((w) => w.status === 'pending');
+    for (let i = 0; i < pending.length; i += POSITION_BATCH_SIZE) {
+        await Promise.all(pending.slice(i, i + POSITION_BATCH_SIZE).map(async (w) => {
+            try {
+                Object.assign(w, await daRequest(`${DA_BASE_URL}/workitems/${encodeURIComponent(w.id)}`, req.oauth_token));
+            } catch (ex) {
+                // One failed lookup must not cost the whole listing; the page shows that position as unknown.
+                console.error(ex);
+            }
+        }));
+    }
+
+    workitems = workitems
+        .map((w) => Object.assign({ group: workitemGroup(w.status) }, w))
+        .sort((a, b) => ((b.stats && b.stats.timeQueued) || '').localeCompare((a.stats && a.stats.timeQueued) || ''));
+    res.status(200).json({
+        requestedDays: days,
+        coveredDays: lookback / (24 * 3600),
+        workitems: workitems
+    });
+});
 
 /// <summary>
 /// Clear the accounts (for debugging purpouses)
