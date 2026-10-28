@@ -9,6 +9,7 @@ const bodyParser = require('body-parser');
 const multer = require('multer');
 const router = express.Router();
 const { getClient } = require('./common/oauth');
+const { confirmChange, describeEnvironments, findEnvironment, requireEnvironment, variablesOf } = require('./common/environment');
 const config = require('../config');
 const dav3 = require('autodesk.forge.designautomation');
 const ForgeAPI = require('forge-apis');
@@ -16,24 +17,35 @@ const publish = require('../lib/publish');
 
 router.use(bodyParser.json());
 
-// Middleware for obtaining a token for each request.
-router.use(async (req, res, next) => {
-    req.oauth_client = await getClient(/*config.scopes.internal*/);
+/// <summary>
+/// The environments for the page's switcher. Above the middleware, as it is asked before one is picked.
+/// </summary>
+router.get('/aps/environments', (req, res) => {
+    res.json(describeEnvironments());
+});
+
+// Middleware for obtaining a token for each request, from the APS app of the environment it names.
+router.use(requireEnvironment, confirmChange, async (req, res, next) => {
+    req.oauth_client = await getClient(/*config.scopes.internal*/undefined, req.apsEnv);
+    if (!req.oauth_client)
+        return (res.status(502).json({
+            diagnostic: `Could not get an APS token for ${req.apsEnv}. Check ${variablesOf(req.apsEnv).join(' and ')}.`
+        }));
     req.oauth_token = req.oauth_client.getCredentials();
     next();
 });
 
-// Static instance of the DA API
-let dav3Instance = null;
+// Static instances of the DA API, one per environment, as each refreshes its own app's token
+let dav3Instances = {};
 
 class Utils {
 
-    static async Instance() {
-        if (dav3Instance === null) {
+    static async Instance(env) {
+        if (!dav3Instances[env]) {
             // Here it is ok to not await since we awaited in the call router.use()
-            dav3Instance = new dav3.AutodeskForgeDesignAutomationClient(config.client);
+            const dav3Instance = dav3Instances[env] = new dav3.AutodeskForgeDesignAutomationClient(config.client);
             let FetchRefresh = async (data) => { // data is undefined in a fetch, but contains the old credentials in a refresh
-                let client = await getClient();
+                let client = await getClient(undefined, env);
                 let credentials = client.getCredentials();
                 // The line below is for testing
                 //credentials.expires_in = 30; credentials.expires_at = new Date(Date.now() + credentials.expires_in * 1000);
@@ -42,7 +54,7 @@ class Utils {
             dav3Instance.authManager.authentications['2-legged'].fetchToken = FetchRefresh;
             dav3Instance.authManager.authentications['2-legged'].refreshToken = FetchRefresh;
         }
-        return (dav3Instance);
+        return (dav3Instances[env]);
     }
 
     /// <summary>
@@ -53,10 +65,10 @@ class Utils {
     }
 
     /// <summary>
-    /// Prefix for AppBundles and Activities
+    /// Prefix for AppBundles and Activities: the client id of the environment's app
     /// </summary>
-    static get NickName() {
-        return (config.credentials.client_id);
+    static NickName(env) {
+        return (findEnvironment(env).client_id);
     }
 
     /// <summary>
@@ -88,16 +100,16 @@ class Utils {
     }
 
     /// <summary>
-    /// Create a new DAv3 client/API with default settings
+    /// Create a new DAv3 client/API with default settings, on the app of the named environment
     /// </summary>
-    static async dav3API(oauth2) {
+    static async dav3API(env) {
         // There is 2 alternatives to setup an API instance, providing the access_token directly
         // let apiClient2 = new dav3.AutodeskForgeDesignAutomationClient(/*config.client*/);
         // apiClient2.authManager.authentications['2-legged'].accessToken = oauth2.access_token;
         //return (new dav3.AutodeskForgeDesignAutomationApi(apiClient));
 
         // Or use the Auto-Refresh feature
-        let apiClient = await Utils.Instance();
+        let apiClient = await Utils.Instance(env);
         return (new dav3.AutodeskForgeDesignAutomationApi(apiClient));
     }
 
@@ -202,7 +214,7 @@ router.get('/aps/designautomation/engines', async /*GetAvailableEngines*/(req, r
     let Allengines = [];
     let paginationToken = null;
     try {
-        const api = await Utils.dav3API(req.oauth_token);
+        const api = await Utils.dav3API(req.apsEnv);
         while (true) {
             let engines = await api.getEngines({ 'page': paginationToken });
             Allengines = Allengines.concat(engines.data)
@@ -234,7 +246,7 @@ router.post('/aps/designautomation/appbundles', async /*CreateAppBundle*/(req, r
     const packageZipPath = _path.join(Utils.LocalBundlesFolder, zipFileName + '.zip');
 
     // get defined app bundles
-    const api = await Utils.dav3API(req.oauth_token);
+    const api = await Utils.dav3API(req.apsEnv);
     let appBundles = null;
     try {
         appBundles = await api.getAppBundles();
@@ -246,7 +258,7 @@ router.post('/aps/designautomation/appbundles', async /*CreateAppBundle*/(req, r
     }
     // check if app bundle is already define
     let newAppVersion = null;
-    const qualifiedAppBundleId = `${Utils.NickName}.${appBundleName}+${Utils.Alias}`;
+    const qualifiedAppBundleId = `${Utils.NickName(req.apsEnv)}.${appBundleName}+${Utils.Alias}`;
     if (!appBundles.data.includes(qualifiedAppBundleId)) {
         // create an appbundle (version 1)
         // const appBundleSpec = {
@@ -361,7 +373,7 @@ router.post('/aps/designautomation/activities', async /*CreateActivity*/(req, re
     const activityName = zipFileName + 'Activity';
 
     // get defined activities
-    const api = await Utils.dav3API(req.oauth_token);
+    const api = await Utils.dav3API(req.apsEnv);
     let activities = null;
     try {
         activities = await api.getActivities();
@@ -371,14 +383,14 @@ router.post('/aps/designautomation/activities', async /*CreateActivity*/(req, re
             diagnostic: 'Failed to get activity list'
         }));
     }
-    const qualifiedActivityId = `${Utils.NickName}.${activityName}+${Utils.Alias}`;
+    const qualifiedActivityId = `${Utils.NickName(req.apsEnv)}.${activityName}+${Utils.Alias}`;
     // define the activity
     // ToDo: parametrize for different engines...
     const engineAttributes = Utils.EngineAttributes(engineName);
     const commandLine = engineAttributes.commandLine.replace('{0}', appBundleName);
     const activitySpec = {
         id: activityName,
-        appbundles: [`${Utils.NickName}.${appBundleName}+${Utils.Alias}`],
+        appbundles: [`${Utils.NickName(req.apsEnv)}.${appBundleName}+${Utils.Alias}`],
         commandLine: [commandLine],
         engine: engineName,
         parameters: {
@@ -462,7 +474,7 @@ router.post('/aps/designautomation/activities', async /*CreateActivity*/(req, re
 /// Get all Activities defined for this account
 /// </summary>
 router.get('/aps/designautomation/activities', async /*GetDefinedActivities*/(req, res) => {
-    const api = await Utils.dav3API(req.oauth_token);
+    const api = await Utils.dav3API(req.apsEnv);
     // filter list of 
     let activities = null;
     try {
@@ -476,8 +488,8 @@ router.get('/aps/designautomation/activities', async /*GetDefinedActivities*/(re
     let definedActivities = [];
     for (let i = 0; i < activities.data.length; i++) {
         let activity = activities.data[i];
-        if (activity.startsWith(Utils.NickName) && activity.indexOf('$LATEST') === -1)
-            definedActivities.push(activity.replace(Utils.NickName + '.', ''));
+        if (activity.startsWith(Utils.NickName(req.apsEnv)) && activity.indexOf('$LATEST') === -1)
+            definedActivities.push(activity.replace(Utils.NickName(req.apsEnv) + '.', ''));
     }
 
     res.status(200).json(definedActivities);
@@ -488,9 +500,9 @@ router.get('/aps/designautomation/activities', async /*GetDefinedActivities*/(re
 /// An id reads "nickname.Name+alias"; '$LATEST' is the alias DA keeps pointing at the newest version.
 /// </summary>
 router.get('/aps/designautomation/activities/all', async /*GetAllActivities*/(req, res) => {
-    const api = await Utils.dav3API(req.oauth_token);
+    const api = await Utils.dav3API(req.apsEnv);
     let ids = [];
-    let ownNickname = Utils.NickName;
+    let ownNickname = Utils.NickName(req.apsEnv);
     try {
         let page = undefined;
         do {
@@ -573,7 +585,7 @@ router.post('/aps/designautomation/workitems', multer({
     const workItemData = JSON.parse(input.data);
     const widthParam = parseFloat(workItemData.width);
     const heigthParam = parseFloat(workItemData.height);
-    const activityName = `${Utils.NickName}.${workItemData.activityName}`;
+    const activityName = `${Utils.NickName(req.apsEnv)}.${workItemData.activityName}`;
     const browserConnectionId = workItemData.browserConnectionId;
 
     // save the file on the server
@@ -582,7 +594,7 @@ router.post('/aps/designautomation/workitems', multer({
 
     // upload file to OSS Bucket
     // 1. ensure bucket existis
-    const bucketKey = Utils.NickName.toLowerCase() + '-designautomation';
+    const bucketKey = Utils.NickName(req.apsEnv).toLowerCase() + '-designautomation';
     try {
         let payload = new ForgeAPI.PostBucketsPayload();
         payload.bucketKey = bucketKey;
@@ -627,9 +639,9 @@ router.post('/aps/designautomation/workitems', multer({
     };
     let workItemStatus = null;
     try {
-        const api = await Utils.dav3API(req.oauth_token);
+        const api = await Utils.dav3API(req.apsEnv);
         workItemStatus = await api.createWorkItem(workItemSpec);
-        monitorWorkItem(req.oauth_client, req.oauth_token, workItemStatus.id, browserConnectionId, outputFileNameOSS, inputFileNameOSS);
+        monitorWorkItem(req.apsEnv, req.oauth_client, req.oauth_token, workItemStatus.id, browserConnectionId, outputFileNameOSS, inputFileNameOSS);
     } catch (ex) {
         console.error(ex);
         return (res.status(500).json({
@@ -641,14 +653,14 @@ router.post('/aps/designautomation/workitems', multer({
     });
 });
 
-async function monitorWorkItem(oauthClient, oauthToken, workItemId, browserConnectionId, outputFileName, inputFileName) {
+async function monitorWorkItem(env, oauthClient, oauthToken, workItemId, browserConnectionId, outputFileName, inputFileName) {
     const socketIO = require('../server').io;
     try {
         while (true) {
             await new Promise((resolve) => setTimeout(resolve, 2000));
-            const api = await Utils.dav3API(oauthToken);
+            const api = await Utils.dav3API(env);
             const status = await api.getWorkitemStatus(workItemId);
-            const bucketKey = Utils.NickName.toLowerCase() + '-designautomation';
+            const bucketKey = Utils.NickName(env).toLowerCase() + '-designautomation';
             const objectsApi = new ForgeAPI.ObjectsApi();
             socketIO.to(browserConnectionId).emit('onComplete', status);
             if (status.status == 'pending' || status.status === 'inprogress') {
@@ -797,7 +809,7 @@ router.get('/aps/designautomation/workitems', async /*GetWorkitems*/(req, res) =
 /// Clear the accounts (for debugging purpouses)
 /// </summary>
 router.delete('/aps/designautomation/account', async /*ClearAccount*/(req, res) => {
-    let api = await Utils.dav3API(req.oauth_token);
+    let api = await Utils.dav3API(req.apsEnv);
     // clear account
     await api.deleteForgeApp('me');
     res.status(200).end();

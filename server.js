@@ -2,8 +2,10 @@ const _path = require('path');
 const express = require('express');
 const cookieSession = require('cookie-session');
 const config = require('./config');
-if (!config.credentials.client_id || !config.credentials.client_secret)
-    return (console.error('Missing APS_CLIENT_ID or APS_CLIENT_SECRET env variables.'));
+// The page works on the environments' apps; APS_CLIENT_ID's app counts only as dev's stand-in.
+if (!config.environments.some((e) => e.client_id && e.client_secret))
+    return (console.error('No APS environment configured. Set APS_<ENV>_CLIENT_ID and APS_<ENV>_CLIENT_SECRET for at least one of '
+        + config.environments.map((e) => e.name.toUpperCase()).join(', ') + '.'));
 
 let app = express();
 app.use(express.static(_path.join(__dirname, './public')));

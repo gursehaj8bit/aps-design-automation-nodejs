@@ -1,8 +1,8 @@
 const { AuthClientTwoLegged } = require('forge-apis');
 const config = require('../../config');
 
-// Clients are cached per scope set. forge-apis stores its autoRefresh flag but never acts on it,
-// so getClient re-authenticates a cached client itself once its token is near expiry.
+// Clients are cached per environment and scope set. forge-apis stores its autoRefresh flag but never
+// acts on it, so getClient re-authenticates a cached client itself once its token is near expiry.
 let cache = {};
 let refreshing = {};
 const REFRESH_MARGIN_SECONDS = 300;
@@ -14,11 +14,12 @@ getClient (/*config.scopes.internal*/);
 /**
  * Initializes a Forge client for 2-legged authentication.
  * @param {string[]} scopes List of resource access scopes.
+ * @param {string} [env] A name from config.environments; omitted, the command-line scripts' app.
  * @returns {AuthClientTwoLegged} 2-legged authentication client.
  */
-async function getClient(scopes) {
+async function getClient(scopes, env) {
     scopes = scopes || config.scopes.internal;
-    const key = scopes.join('+');
+    const key = (env ? env + ':' : '') + scopes.join('+');
     if ( cache[key] ) {
         const client = cache[key];
         if ( !client.isAboutToExpire(REFRESH_MARGIN_SECONDS) )
@@ -33,7 +34,7 @@ async function getClient(scopes) {
     }
 
     try {
-        const { client_id, client_secret } = config.credentials;
+        const { client_id, client_secret } = env ? config.environments.find((e) => e.name === env) : config.credentials;
         let client = new AuthClientTwoLegged(client_id, client_secret, scopes || config.scopes.internal, true);
         let credentials = await client.authenticate();
         cache[key] = client;

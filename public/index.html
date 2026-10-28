@@ -30,6 +30,11 @@
                     </a>
                 </li>
             </ul>
+            <!-- One APS app per environment; filled from /api/aps/environments -->
+            <div class="navbar-left" style="margin: 10px 0 0 15px;">
+                <span class="text-muted" style="margin-right: 5px;">APS environment</span>
+                <div class="btn-group btn-group-sm" id="apsEnvironments" role="group" aria-label="APS environment"></div>
+            </div>
             <div style="float: right; margin-top: 15px; cursor: pointer;">
                 <a href="/blob.html" style="padding-right: 15px;" title="Azure Blob Storage files">
                     <span class="glyphicon glyphicon-cloud"></span> Blob Storage
@@ -109,7 +114,7 @@
                 <div class="modal-header">
                     <button type="button" class="close" data-dismiss="modal" aria-label="Cancel"><span
                             aria-hidden="true">&times;</span></button>
-                    <h4 class="modal-title" id="publishAddinLabel">Publish an add-in</h4>
+                    <h4 class="modal-title" id="publishAddinLabel">Publish an add-in to <b class="apsEnvironmentName"></b></h4>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -139,7 +144,7 @@
                 <div class="modal-header">
                     <button type="button" class="close" data-dismiss="modal" aria-label="Cancel"><span
                             aria-hidden="true">&times;</span></button>
-                    <h4 class="modal-title" id="myModalLabel">Create/Update AppBundle & Activity</h4>
+                    <h4 class="modal-title" id="myModalLabel">Create/Update AppBundle & Activity on <b class="apsEnvironmentName"></b></h4>
                 </div>
                 <div class="modal-body">
                     <div class="alert alert-warning">

@@ -1,5 +1,5 @@
 $(document).ready(function () {
-    prepareLists();
+    loadEnvironments();
 
     $('#clearAccount').click(clearAccount);
     $('#defineActivityShow').click(defineActivityModal);
@@ -26,6 +26,83 @@ function prepareLists() {
     list('localBundles', '/api/appbundles');
     listAllActivities();
     listWorkitems();
+}
+
+// The APS environment every /api call is for. Each is its own APS app, so switching reloads
+// everything; the choice is remembered per browser.
+var apsEnvironments = [];
+var apsEnvironment = null;
+
+// Every call names the environment. A change to a guarded one (prod) is sent only once the user
+// has typed its name, and the server refuses it without that too. apsReadOnly marks a POST that
+// changes nothing.
+$.ajaxSetup({
+    beforeSend: function (xhr, settings) {
+        if (!apsEnvironment)
+            return;
+        xhr.setRequestHeader('X-APS-Env', apsEnvironment.name);
+        if (!apsEnvironment.guarded || settings.type === 'GET' || settings.apsReadOnly)
+            return;
+        var name = apsEnvironment.name;
+        var typed = window.prompt('This changes ' + name + '. Type "' + name + '" to go ahead.');
+        if (typed === null || typed.trim() !== name) {
+            writeLines(['Cancelled: nothing was sent to ' + name]);
+            return false;
+        }
+        xhr.setRequestHeader('X-APS-Confirm', name);
+    }
+});
+
+function loadEnvironments() {
+    jQuery.ajax({
+        url: '/api/aps/environments',
+        success: function (envs) {
+            apsEnvironments = envs;
+            var configured = envs.filter(function (e) { return e.configured; });
+            var remembered = null;
+            try {
+                remembered = localStorage.getItem('apsEnvironment');
+            } catch (ex) { }
+            var pick = configured.filter(function (e) { return e.name === remembered; })[0] || configured[0];
+            if (pick)
+                selectEnvironment(pick);
+            else {
+                renderEnvironments();
+                writeLines(['No APS environment is configured: set APS_<ENV>_CLIENT_ID and APS_<ENV>_CLIENT_SECRET in .env']);
+            }
+        },
+        error: function () {
+            writeLines(['Failed to load the APS environments']);
+        }
+    });
+}
+
+function renderEnvironments() {
+    var group = $('#apsEnvironments').empty();
+    apsEnvironments.forEach(function (e) {
+        var active = apsEnvironment !== null && apsEnvironment.name === e.name;
+        $('<button type="button" class="btn">')
+            .addClass(active ? (e.guarded ? 'btn-danger active' : 'btn-primary active') : 'btn-default')
+            .attr('aria-pressed', active)
+            .prop('disabled', !e.configured)
+            .attr('title', !e.configured ? 'Not configured: set ' + e.missing.join(' and ')
+                : e.borrowed ? 'Using the APS_CLIENT_ID app until ' + e.missing.join(' and ') + ' are set'
+                : (e.guarded ? 'Changes here ask you to type "' + e.name + '" first' : ''))
+            .text(e.name)
+            .click(function () { selectEnvironment(e); })
+            .appendTo(group);
+    });
+    $('.apsEnvironmentName').text(apsEnvironment ? apsEnvironment.name : '');
+}
+
+function selectEnvironment(e) {
+    apsEnvironment = e;
+    try {
+        localStorage.setItem('apsEnvironment', e.name);
+    } catch (ex) { }
+    renderEnvironments();
+    writeLines(['APS environment: ' + e.name + (e.borrowed ? ' (using the APS_CLIENT_ID app until its own pair is set)' : '')]);
+    prepareLists();
 }
 
 var workitemList = [];
@@ -150,9 +227,13 @@ function workitemDuration(w) {
 function listAllActivities() {
     const tbody = $('#allActivities tbody').empty()
         .append($('<tr>').append($('<td colspan="3" class="text-muted">').text('Loading…')));
+    const env = apsEnvironment;
     jQuery.ajax({
         url: '/api/aps/designautomation/activities/all',
         success: function (res) {
+            // An answer for an environment switched away from meanwhile is not shown.
+            if (env !== apsEnvironment)
+                return;
             $('#ownNickname').text('this app: ' + res.nickname);
             tbody.empty();
             if (res.activities.length === 0)
@@ -166,6 +247,8 @@ function listAllActivities() {
             });
         },
         error: function (xhr) {
+            if (env !== apsEnvironment)
+                return;
             tbody.empty().append($('<tr>').append($('<td colspan="3" class="text-danger">')
                 .text((xhr.responseJSON && xhr.responseJSON.diagnostic) || 'Failed to load activities')));
         }
@@ -174,9 +257,12 @@ function listAllActivities() {
 
 function list(control, endpoint) {
     $('#' + control).find('option').remove().end();
+    var env = apsEnvironment;
     jQuery.ajax({
         url: endpoint,
         success: function (list) {
+            if (env !== apsEnvironment)
+                return;
             if (list.length === 0)
                 $('#' + control).append($('<option>', {
                     disabled: true,
@@ -298,6 +384,7 @@ function runAddinCommand(command) {
     jQuery.ajax({
         url: '/api/addins/publish',
         method: 'POST',
+        apsReadOnly: command === 'check-remote',
         contentType: 'application/json',
         data: JSON.stringify({ command: command, addin: $('#addins').val(), alias: alias }),
         success: function (res) {
