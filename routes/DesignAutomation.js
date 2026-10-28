@@ -683,6 +683,19 @@ const STATUS_BATCH_SIZE = 50;
 // Queue positions take one GET per workitem; this many go out at once, so a long queue does not
 // arrive at Design Automation as a single burst.
 const POSITION_BATCH_SIZE = 10;
+// A workitem names its activity but not its engine, so the engine comes from the activity. An
+// alias can be moved to a version on another engine, so a looked-up engine is kept only this long.
+const ACTIVITY_ENGINE_TTL_MS = 10 * 60 * 1000;
+const activityEngines = new Map();
+
+async function activityEngine(activityId, oauthToken) {
+    const cached = activityEngines.get(activityId);
+    if (cached && Date.now() - cached.at < ACTIVITY_ENGINE_TTL_MS)
+        return (cached.engine);
+    const activity = await daRequest(`${DA_BASE_URL}/activities/${encodeURIComponent(activityId)}`, oauthToken);
+    activityEngines.set(activityId, { engine: activity.engine, at: Date.now() });
+    return (activity.engine);
+}
 
 async function daRequest(url, oauthToken, options = {}) {
     const response = await fetch(url, Object.assign({}, options, {
@@ -756,6 +769,19 @@ router.get('/aps/designautomation/workitems', async /*GetWorkitems*/(req, res) =
             }
         }));
     }
+
+    // engine reads e.g. "Autodesk.Revit+2024" or "Autodesk.AutoCAD+24_3". It is the engine the
+    // activity's alias points at now, which is the one the workitem ran on unless the alias moved since.
+    const engines = new Map();
+    await Promise.all([...new Set(workitems.map((w) => w.activityId).filter(Boolean))].map(async (id) => {
+        try {
+            engines.set(id, await activityEngine(id, req.oauth_token));
+        } catch (ex) {
+            // A deleted alias or another app's activity cannot be read; the page shows that engine as unknown.
+            console.error(ex);
+        }
+    }));
+    workitems.forEach((w) => { w.engine = engines.get(w.activityId) || null; });
 
     workitems = workitems
         .map((w) => Object.assign({ group: workitemGroup(w.status) }, w))

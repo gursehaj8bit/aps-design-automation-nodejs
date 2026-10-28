@@ -47,7 +47,7 @@ function listWorkitems(background) {
     var request = ++workitemRequest;
     $('#refreshWorkitems').addClass('spinning');
     if (background !== true)
-        $('#workitems tbody').empty().append($('<tr>').append($('<td colspan="6" class="text-muted">').text('Loading…')));
+        $('#workitems tbody').empty().append($('<tr>').append($('<td colspan="7" class="text-muted">').text('Loading…')));
     jQuery.ajax({
         url: '/api/aps/designautomation/workitems',
         data: { days: $('#workitemWindow').val() },
@@ -68,7 +68,7 @@ function listWorkitems(background) {
         error: function (xhr) {
             if (request !== workitemRequest)
                 return;
-            $('#workitems tbody').empty().append($('<tr>').append($('<td colspan="6" class="text-danger">')
+            $('#workitems tbody').empty().append($('<tr>').append($('<td colspan="7" class="text-danger">')
                 .text((xhr.responseJSON && xhr.responseJSON.diagnostic) || 'Failed to load workitems')));
         },
         complete: function () {
@@ -90,14 +90,14 @@ function renderWorkitems() {
     var shown = workitemList.filter(function (w) {
         if (group !== 'all' && w.group !== group)
             return false;
-        return !search || [w.id, w.activityId].some(function (v) {
+        return !search || [w.id, w.activityId, w.engine].some(function (v) {
             return v && v.toLowerCase().indexOf(search) !== -1;
         });
     });
 
     var tbody = $('#workitems tbody').empty();
     if (shown.length === 0)
-        tbody.append($('<tr>').append($('<td colspan="6" class="text-muted">').text('Nothing found')));
+        tbody.append($('<tr>').append($('<td colspan="7" class="text-muted">').text('Nothing found')));
     shown.forEach(function (w) {
         var report = w.reportUrl && w.group !== 'running'
             ? $('<a target="_blank">').attr('href', w.reportUrl).text('Report')
@@ -105,12 +105,22 @@ function renderWorkitems() {
         $('<tr>').append(
             $('<td>').append($('<span class="label">').addClass(groupLabels[w.group]).text(w.status + (w.progress ? ' ' + w.progress : '')), ' ', queuePosition(w)),
             $('<td>').text((w.activityId || '').replace(/^[^.]*\./, '')).attr('title', w.activityId || ''),
+            engineCell(w),
             $('<td>').text(w.stats && w.stats.timeQueued ? new Date(w.stats.timeQueued).toLocaleString() : ''),
             $('<td>').text(workitemDuration(w)),
             $('<td>').append($('<code>').text(w.id.substring(0, 8)).attr('title', w.id)),
             $('<td>').append(report)
         ).appendTo(tbody);
     });
+}
+
+// "Autodesk.AutoCAD+24_3" shows as "AutoCAD 24_3"; the full engine id stays in the tooltip.
+function engineCell(w) {
+    if (!w.engine)
+        return $('<td class="text-muted">').text('unknown')
+            .attr('title', 'The activity could not be read: its alias was deleted, or it belongs to another app (see the server log)');
+    return $('<td>').text(w.engine.replace(/^Autodesk\./, '').replace('+', ' '))
+        .attr('title', w.engine + ' (the engine the activity points at now)');
 }
 
 // Design Automation gives a position only for a pending workitem, counted in the one queue all
