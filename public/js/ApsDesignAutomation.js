@@ -9,6 +9,10 @@ $(document).ready(function () {
     $('#publishAddinBundle').click(function () { runAddinCommand('bundle'); });
     $('#publishAddinActivities').click(function () { runAddinCommand('activity'); });
     $('#checkRemote').click(function () { runAddinCommand('check-remote'); });
+    $('#downloadBundleModal').on('show.bs.modal', listUploadedBundles);
+    $('#downloadBundle').click(downloadBundle);
+    $('#deleteActivityModal').on('show.bs.modal', listDeletableActivities);
+    $('#deleteActivity').click(deleteActivity);
     $('#refreshWorkitems').click(function () { listWorkitems(); });
     $('#workitemFilters').on('click', 'button', function () {
         $('#workitemFilters button').removeClass('active');
@@ -251,6 +255,162 @@ function listAllActivities() {
                 return;
             tbody.empty().append($('<tr>').append($('<td colspan="3" class="text-danger">')
                 .text((xhr.responseJSON && xhr.responseJSON.diagnostic) || 'Failed to load activities')));
+        }
+    });
+}
+
+// Every AppBundle visible to this app, its own first, one option per alias.
+function listUploadedBundles() {
+    var select = $('#uploadedBundles').empty()
+        .append($('<option>', { disabled: true, text: 'Loading…' }));
+    var button = $('#downloadBundle').prop('disabled', true);
+    $('#uploadedBundlesNote').text('');
+    var env = apsEnvironment;
+    jQuery.ajax({
+        url: '/api/aps/designautomation/appbundles/all',
+        success: function (res) {
+            if (env !== apsEnvironment)
+                return;
+            select.empty();
+            $('#uploadedBundlesNote').text('this app: ' + res.nickname);
+            if (res.appBundles.length === 0) {
+                select.append($('<option>', { disabled: true, text: 'Nothing found' }));
+                return;
+            }
+            var own = res.appBundles.filter(function (b) { return b.nickname === res.nickname; });
+            var others = res.appBundles.filter(function (b) { return b.nickname !== res.nickname; });
+            [[own, 'This app'], [others, 'Other apps']].forEach(function (group) {
+                if (group[0].length === 0)
+                    return;
+                var optgroup = $('<optgroup>', { label: group[1] }).appendTo(select);
+                group[0].forEach(function (b) {
+                    optgroup.append($('<option>', {
+                        value: b.id,
+                        text: (b.nickname === res.nickname ? '' : b.nickname + '.') + b.name + '  +' + b.alias
+                    }));
+                });
+            });
+            button.prop('disabled', false);
+        },
+        error: function (xhr) {
+            if (env !== apsEnvironment)
+                return;
+            select.empty().append($('<option>', { disabled: true, text: 'Failed to load AppBundles' }));
+            $('#uploadedBundlesNote').text((xhr.responseJSON && xhr.responseJSON.diagnostic) || '');
+        }
+    });
+}
+
+// The zip comes through this server, which names it; a plain link cannot carry the X-APS-Env
+// header, so it is fetched and handed to the browser to save.
+function downloadBundle() {
+    var id = $('#uploadedBundles').val();
+    if (!id)
+        return;
+    var envName = apsEnvironment.name;
+    var fileName = id.replace(/[^A-Za-z0-9_.+\-]/g, '_') + '.zip';
+    var button = $('#downloadBundle').prop('disabled', true);
+    writeLines(['Downloading AppBundle ' + id + ' from ' + envName + '…']);
+    fetch('/api/aps/designautomation/appbundles/' + encodeURIComponent(id) + '/zip', {
+        headers: { 'X-APS-Env': envName }
+    }).then(function (res) {
+        if (!res.ok)
+            return res.json().catch(function () { return {}; }).then(function (body) {
+                throw new Error(body.diagnostic || 'Failed to download ' + id + ' (HTTP ' + res.status
+                    + (res.status === 404 ? ': restart the server to pick up the download route' : '') + ')');
+            });
+        var version = res.headers.get('X-AppBundle-Version');
+        var engine = res.headers.get('X-AppBundle-Engine');
+        return res.blob().then(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+            writeLines(['Saved ' + fileName + ' (v' + version + ', ' + engine + ', ' + blob.size + ' bytes)']);
+        });
+    }).catch(function (err) {
+        writeLines([' -> ' + err.message]);
+    }).then(function () {
+        button.prop('disabled', false);
+    });
+}
+
+// Only the activities under this app's own nickname can be deleted. One option per activity name,
+// since a delete takes every alias and version with it.
+function listDeletableActivities() {
+    var select = $('#deletableActivities').empty()
+        .append($('<option>', { disabled: true, text: 'Loading…' }));
+    var button = $('#deleteActivity').prop('disabled', true);
+    $('#deletableActivitiesNote').text('');
+    var env = apsEnvironment;
+    jQuery.ajax({
+        url: '/api/aps/designautomation/activities/all',
+        success: function (res) {
+            if (env !== apsEnvironment)
+                return;
+            var aliases = {};
+            res.activities.forEach(function (a) {
+                if (a.nickname !== res.nickname)
+                    return;
+                aliases[a.name] = aliases[a.name] || [];
+                if (a.alias)
+                    aliases[a.name].push(a.alias);
+            });
+            var names = Object.keys(aliases).sort();
+            select.empty();
+            $('#deletableActivitiesNote').text('owned by ' + res.nickname);
+            if (names.length === 0) {
+                select.append($('<option>', { disabled: true, text: 'Nothing found' }));
+                return;
+            }
+            names.forEach(function (name) {
+                select.append($('<option>', {
+                    value: name,
+                    text: name + (aliases[name].length ? '  (+' + aliases[name].join(', +') + ')' : '')
+                }));
+            });
+            button.prop('disabled', false);
+        },
+        error: function (xhr) {
+            if (env !== apsEnvironment)
+                return;
+            select.empty().append($('<option>', { disabled: true, text: 'Failed to load activities' }));
+            $('#deletableActivitiesNote').text((xhr.responseJSON && xhr.responseJSON.diagnostic) || '');
+        }
+    });
+}
+
+function deleteActivity() {
+    var name = $('#deletableActivities').val();
+    if (!name)
+        return;
+    if (!confirm('Delete activity ' + name + ' on ' + apsEnvironment.name + ', with every version and alias?' +
+        '\n\nYou cannot undo this operation. Proceed?'))
+        return;
+    var button = $('#deleteActivity').prop('disabled', true);
+    jQuery.ajax({
+        url: '/api/aps/designautomation/activities/' + encodeURIComponent(name),
+        method: 'DELETE',
+        success: function () {
+            writeLines(['Activity deleted: ' + name + ' on ' + apsEnvironment.name]);
+            $('#deleteActivityModal').modal('hide');
+            listAllActivities();
+        },
+        error: function (xhr) {
+            // A cancelled prod confirmation never reaches the server and has already been logged.
+            // No diagnostic means the answer is not this server's route: a 404 here is a server
+            // started before the route existed, so the status is shown to tell the two apart.
+            if (xhr.statusText !== 'canceled')
+                writeLines([' -> ' + ((xhr.responseJSON && xhr.responseJSON.diagnostic)
+                    || 'Failed to delete activity ' + name + ' (HTTP ' + xhr.status + ' ' + xhr.statusText
+                    + (xhr.status === 404 ? ': restart the server to pick up the delete route' : '') + ')')]);
+        },
+        complete: function () {
+            button.prop('disabled', false);
         }
     });
 }

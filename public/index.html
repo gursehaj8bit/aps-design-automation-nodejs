@@ -43,6 +43,14 @@
                     title="Publish an add-in from revit/addins">
                     <span class="glyphicon glyphicon-upload mlink"> </span> Publish add-in
                 </span>
+                <span style="padding-right: 15px;" data-toggle="modal" data-target="#downloadBundleModal"
+                    title="Download an AppBundle zip already uploaded to APS">
+                    <span class="glyphicon glyphicon-download-alt mlink"> </span> Download bundle
+                </span>
+                <span style="padding-right: 15px;" data-toggle="modal" data-target="#deleteActivityModal"
+                    title="Delete one of this app's activities">
+                    <span class="glyphicon glyphicon-trash mlink"> </span> Delete activity
+                </span>
                 <span style="padding-right: 5px;" data-toggle="modal" data-target="#defineActivityModal"
                     title="Configura AppBundle & Activity">
                     <span class="glyphicon glyphicon-cog glyphiconTop mlink"> </span> Configure
@@ -137,6 +145,56 @@
             </div>
         </div>
     </div>
+    <!-- Modal Download an AppBundle already uploaded to APS -->
+    <div class="modal fade" id="downloadBundleModal" tabindex="-1" role="dialog" aria-labelledby="downloadBundleLabel">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Cancel"><span
+                            aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title" id="downloadBundleLabel">Download an AppBundle from <b class="apsEnvironmentName"></b></h4>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="uploadedBundles">AppBundle:</label>
+                        <select class="form-control" id="uploadedBundles"> </select>
+                        <small class="text-muted" id="uploadedBundlesNote"></small>
+                    </div>
+                    Downloads the zip of the version the alias points at. Another app's bundle can be
+                    downloaded only if Autodesk lets this app read it.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="downloadBundle" disabled>Download</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Modal Delete one of this app's activities -->
+    <div class="modal fade" id="deleteActivityModal" tabindex="-1" role="dialog" aria-labelledby="deleteActivityLabel">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Cancel"><span
+                            aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title" id="deleteActivityLabel">Delete an activity on <b class="apsEnvironmentName"></b></h4>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="deletableActivities">Activity:</label>
+                        <select class="form-control" id="deletableActivities"> </select>
+                        <small class="text-muted" id="deletableActivitiesNote"></small>
+                    </div>
+                    Deletes the activity with every version and alias. Workitems that name it will no longer
+                    start. Only this app's activities are listed; another app's cannot be deleted from here.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="deleteActivity" disabled>Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- Modal Define AppBundle & Activity -->
     <div class="modal fade" id="defineActivityModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel">
         <div class="modal-dialog" role="document">
@@ -160,8 +218,9 @@
                         <label for="engines">Select engine:</label>
                         <select class="form-control" id="engines"> </select>
                     </div>
-                    For this sample the .ZIP name is used as suffix to define <b>AppBundle</b> and <b>Activity</b>
-                    names. Activities will have file and params input, and file output.
+                    The .ZIP name, without <b>.zip</b>, is used as it stands for both the <b>AppBundle</b> and
+                    the <b>Activity</b> name (<b>ExtractBlocks.zip</b> defines <b>ExtractBlocks</b>). Activities
+                    will have file and params input, and file output.
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-danger" id="clearAccount">Clear account</button>

@@ -207,6 +207,99 @@ router.get('/appbundles', async /*GetLocalBundles*/(req, res) => {
 });
 
 /// <summary>
+/// Every AppBundle visible to this account, split into nickname, name and alias the way
+/// activities/all splits activities.
+/// </summary>
+router.get('/aps/designautomation/appbundles/all', async /*GetAllAppBundles*/(req, res) => {
+    const api = await Utils.dav3API(req.apsEnv);
+    let ids = [];
+    let ownNickname = Utils.NickName(req.apsEnv);
+    try {
+        let page = undefined;
+        do {
+            const result = await api.getAppBundles(page ? { page: page } : {});
+            ids = ids.concat(result.data);
+            page = result.paginationToken;
+        } while (page);
+        ownNickname = (await api.getNickname('me')) || ownNickname;
+    } catch (ex) {
+        console.error(`GetAllAppBundles on ${req.apsEnv}: ${(ex && (ex.status || ex.statusCode)) || 'no status'}`);
+        return (res.status(500).json({
+            diagnostic: 'Failed to get the AppBundle list'
+        }));
+    }
+
+    const appBundles = ids.map((id) => {
+        const dot = id.indexOf('.');
+        const plus = id.lastIndexOf('+');
+        return ({
+            id: id,
+            nickname: dot === -1 ? '' : id.substring(0, dot),
+            name: id.substring(dot + 1, plus === -1 ? id.length : plus),
+            alias: plus === -1 ? '' : id.substring(plus + 1)
+        });
+    }).sort((a, b) => a.nickname.localeCompare(b.nickname) || a.name.localeCompare(b.name) || a.alias.localeCompare(b.alias));
+
+    res.status(200).json({ nickname: ownNickname, appBundles: appBundles });
+});
+
+/// <summary>
+/// One AppBundle's zip, for the version its alias points at, saved as "<id>.zip". Design
+/// Automation answers a short-lived signed URL on its own storage; the zip is streamed through
+/// here because a browser ignores the file name it is given for a link to another site.
+/// </summary>
+router.get('/aps/designautomation/appbundles/:id/zip', async /*DownloadAppBundle*/(req, res) => {
+    const id = req.params.id;
+    // A qualified id reads "nickname.Name+alias"; '$LATEST' is an alias Design Automation keeps itself.
+    if (!/^[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\+[A-Za-z0-9_\-$]+$/.test(id))
+        return (res.status(400).json({ diagnostic: `Not a qualified AppBundle id: ${id}` }));
+    const api = await Utils.dav3API(req.apsEnv);
+    let bundle = null;
+    try {
+        bundle = await api.getAppBundle(id);
+    } catch (ex) {
+        // The SDK's error carries the request, bearer token included, so only the status and
+        // Autodesk's answer are logged and shown.
+        const status = ex && (ex.status || ex.statusCode);
+        const answer = ((ex && ex.response && ex.response.text) || (ex && ex.message) || '').trim();
+        console.error(`DownloadAppBundle ${id} on ${req.apsEnv}: ${status || 'no status'} ${answer}`);
+        if (status === 404)
+            return (res.status(404).json({ diagnostic: `No AppBundle ${id} this app can read` }));
+        return (res.status(500).json({
+            diagnostic: `Failed to read AppBundle ${id}: Autodesk answered ${status || 'nothing'}${answer ? ' ' + answer : ''}`
+        }));
+    }
+    if (!bundle || !bundle.package)
+        return (res.status(502).json({ diagnostic: `Autodesk gave no download link for ${id}` }));
+    const fileName = id.replace(/[^A-Za-z0-9_.+\-]/g, '_') + '.zip';
+    // The signed URL is not logged: it grants a download to whoever holds it.
+    const upstream = http.get(bundle.package, (zip) => {
+        if (zip.statusCode !== 200) {
+            zip.resume();
+            console.error(`DownloadAppBundle ${id} on ${req.apsEnv}: storage answered ${zip.statusCode}`);
+            return (res.status(502).json({ diagnostic: `Autodesk storage answered ${zip.statusCode} for ${id}` }));
+        }
+        res.status(200).set({
+            'Content-Type': 'application/zip',
+            'Content-Disposition': `attachment; filename="${fileName}"`,
+            'X-AppBundle-Version': String(bundle.version),
+            'X-AppBundle-Engine': String(bundle.engine || '')
+        });
+        if (zip.headers['content-length'])
+            res.set('Content-Length', zip.headers['content-length']);
+        zip.pipe(res);
+    });
+    upstream.on('error', (err) => {
+        console.error(`DownloadAppBundle ${id} on ${req.apsEnv}: ${err.message}`);
+        if (!res.headersSent)
+            return (res.status(502).json({ diagnostic: `Could not fetch the zip of ${id} from Autodesk storage` }));
+        res.destroy(err);
+    });
+    // A closed browser tab stops the fetch from Autodesk too.
+    res.on('close', () => upstream.destroy());
+});
+
+/// <summary>
 /// Return a list of available engines
 /// </summary>
 router.get('/aps/designautomation/engines', async /*GetAvailableEngines*/(req, res) => {
@@ -239,8 +332,9 @@ router.post('/aps/designautomation/appbundles', async /*CreateAppBundle*/(req, r
     const zipFileName = appBundleSpecs.zipFileName;
     const engineName = appBundleSpecs.engine;
 
-    // standard name for this sample
-    const appBundleName = zipFileName + 'AppBundle';
+    // The ZIP name is the AppBundle name as it stands; DA keeps bundles and activities apart, so the
+    // activity can share it.
+    const appBundleName = zipFileName;
 
     // check if ZIP with bundle is here
     const packageZipPath = _path.join(Utils.LocalBundlesFolder, zipFileName + '.zip');
@@ -368,9 +462,9 @@ router.post('/aps/designautomation/activities', async /*CreateActivity*/(req, re
     const zipFileName = activitySpecs.zipFileName;
     const engineName = activitySpecs.engine;
 
-    // standard name for this sample
-    const appBundleName = zipFileName + 'AppBundle';
-    const activityName = zipFileName + 'Activity';
+    // The ZIP name is both the AppBundle and the Activity name, as it stands
+    const appBundleName = zipFileName;
+    const activityName = zipFileName;
 
     // get defined activities
     const api = await Utils.dav3API(req.apsEnv);
@@ -531,6 +625,34 @@ router.get('/aps/designautomation/activities/all', async /*GetAllActivities*/(re
     }).sort((a, b) => a.nickname.localeCompare(b.nickname) || a.name.localeCompare(b.name) || a.alias.localeCompare(b.alias));
 
     res.status(200).json({ nickname: ownNickname, activities: activities });
+});
+
+/// <summary>
+/// Delete one of this app's activities: every version and every alias of it. Design Automation
+/// resolves the unqualified name against the calling app only, so another app's activity cannot
+/// be reached from here.
+/// </summary>
+router.delete('/aps/designautomation/activities/:name', async /*DeleteActivity*/(req, res) => {
+    const name = req.params.name;
+    // DA activity names are letters, digits and underscores; anything else is not one of ours.
+    if (!/^[A-Za-z0-9_]+$/.test(name))
+        return (res.status(400).json({ diagnostic: `Not an activity name: ${name}` }));
+    const api = await Utils.dav3API(req.apsEnv);
+    try {
+        await api.deleteActivity(name);
+    } catch (ex) {
+        // The SDK's error carries the request, bearer token included, so only the status and
+        // Autodesk's answer are logged and shown.
+        const status = ex && (ex.status || ex.statusCode);
+        const answer = ((ex && ex.response && ex.response.text) || (ex && ex.message) || '').trim();
+        console.error(`DeleteActivity ${name} on ${req.apsEnv}: ${status || 'no status'} ${answer}`);
+        if (status === 404)
+            return (res.status(404).json({ diagnostic: `No activity ${name} on this app` }));
+        return (res.status(500).json({
+            diagnostic: `Failed to delete activity ${name}: Autodesk answered ${status || 'nothing'}${answer ? ' ' + answer : ''}`
+        }));
+    }
+    res.status(200).json({ activity: name });
 });
 
 /// <summary>
